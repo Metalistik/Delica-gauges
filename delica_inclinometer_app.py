@@ -50,21 +50,18 @@ car_front_raw = pygame.image.load("car_front.png").convert_alpha()
 SIDE_BOX  = pygame.Rect(72, 92, 395, 182)
 FRONT_BOX = pygame.Rect(515, 92, 178, 182)
 
-# Gauge centers lowered a bit
 PITCH_CENTER = (220, 402)
 ROLL_CENTER  = (580, 402)
 
-# Shorter radius so tip stays on arc
 GAUGE_RADIUS = 106
-
-# Narrower sweep so needle stays inside the gauge
 ARC_START_DEG = 220.0
 ARC_END_DEG   = 320.0
 
 MAX_NEEDLE_ANGLE = 45.0
 MAX_CAR_ANGLE    = 18.0
 
-SMOOTH = 0.10
+SMOOTH = 0.22
+FPS = 30
 
 ZERO_BUTTON = pygame.Rect(685, 18, 92, 36)
 
@@ -125,21 +122,6 @@ def roll_color(a):
         return (110, 255, 100)
     return (50, 220, 255)
 
-def draw_glow_line(surface, color, p1, p2):
-    for width, alpha in [(8, 22), (5, 48), (3, 90)]:
-        s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-        pygame.draw.line(s, (*color, alpha), p1, p2, width)
-        surface.blit(s, (0, 0))
-    pygame.draw.line(surface, color, p1, p2, 2)
-
-def draw_glow_circle(surface, color, center, r):
-    for rr, alpha in [(r + 5, 16), (r + 3, 40), (r + 1, 80)]:
-        s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*color, alpha), center, rr)
-        surface.blit(s, (0, 0))
-    pygame.draw.circle(surface, color, center, r)
-    pygame.draw.circle(surface, (255, 255, 255), center, r, 1)
-
 def draw_needle(surface, center, angle_deg, color):
     theta = gauge_theta(angle_deg)
 
@@ -152,9 +134,11 @@ def draw_needle(surface, center, angle_deg, color):
         int(center[1] - 10 * math.sin(theta)),
     )
 
-    draw_glow_line(surface, color, tail, tip)
-    draw_glow_circle(surface, color, tip, 4)
-    draw_glow_circle(surface, (255, 255, 255), center, 2)
+    # lightweight glow
+    pygame.draw.line(surface, color, tail, tip, 4)
+    pygame.draw.line(surface, (255, 255, 255), tail, tip, 1)
+    pygame.draw.circle(surface, color, tip, 4)
+    pygame.draw.circle(surface, color, center, 3)
 
 def draw_button(surface, rect, text, hovered=False):
     fill = (20, 28, 40) if not hovered else (32, 40, 58)
@@ -164,11 +148,20 @@ def draw_button(surface, rect, text, hovered=False):
     label = font_btn.render(text, True, (235, 245, 255))
     surface.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
 
+def build_rotation_cache(img, min_deg, max_deg):
+    cache = {}
+    for deg in range(min_deg, max_deg + 1):
+        cache[deg] = pygame.transform.rotozoom(img, deg, 1.0)
+    return cache
+
 # =========================
-# Scale cars
+# Scale and cache cars
 # =========================
 car_side = fit(car_side_raw, SIDE_BOX.width, SIDE_BOX.height)
 car_front = fit(car_front_raw, FRONT_BOX.width, FRONT_BOX.height)
+
+SIDE_CACHE = build_rotation_cache(car_side, -MAX_CAR_ANGLE, MAX_CAR_ANGLE)
+FRONT_CACHE = build_rotation_cache(car_front, -MAX_CAR_ANGLE, MAX_CAR_ANGLE)
 
 roll_lp = LowPass(SMOOTH)
 pitch_lp = LowPass(SMOOTH)
@@ -214,20 +207,20 @@ while running:
     roll_s = roll_lp.update(roll)
     pitch_s = pitch_lp.update(pitch)
 
-    roll_for_car = clamp(roll_s, -MAX_CAR_ANGLE, MAX_CAR_ANGLE)
-    pitch_for_car = clamp(pitch_s, -MAX_CAR_ANGLE, MAX_CAR_ANGLE)
+    roll_for_car = int(round(clamp(roll_s, -MAX_CAR_ANGLE, MAX_CAR_ANGLE)))
+    pitch_for_car = int(round(clamp(pitch_s, -MAX_CAR_ANGLE, MAX_CAR_ANGLE)))
 
     roll_for_needle = clamp(roll_s, -MAX_NEEDLE_ANGLE, MAX_NEEDLE_ANGLE)
     pitch_for_needle = clamp(pitch_s, -MAX_NEEDLE_ANGLE, MAX_NEEDLE_ANGLE)
 
     screen.blit(background, (0, 0))
 
-    # Cars
-    side_rot = pygame.transform.rotozoom(car_side, pitch_for_car, 1.0)
+    # Cars from cache
+    side_rot = SIDE_CACHE[pitch_for_car]
     side_rect = side_rot.get_rect(center=SIDE_BOX.center)
     screen.blit(side_rot, side_rect)
 
-    front_rot = pygame.transform.rotozoom(car_front, -roll_for_car, 1.0)
+    front_rot = FRONT_CACHE[-roll_for_car]
     front_rect = front_rot.get_rect(center=FRONT_BOX.center)
     screen.blit(front_rot, front_rect)
 
@@ -235,7 +228,7 @@ while running:
     draw_needle(screen, PITCH_CENTER, pitch_for_needle, pitch_color(pitch_for_needle))
     draw_needle(screen, ROLL_CENTER, roll_for_needle, roll_color(roll_for_needle))
 
-    # Labels and values placed below the arc, centered and readable
+    # Text
     pitch_lbl = font_med.render("PITCH", True, pitch_color(pitch_for_needle))
     roll_lbl  = font_med.render("ROLL", True, roll_color(roll_for_needle))
 
@@ -255,7 +248,7 @@ while running:
         screen.blit(msg, (ZERO_BUTTON.left - msg.get_width() - 10, ZERO_BUTTON.centery - msg.get_height() // 2))
 
     pygame.display.flip()
-    clock.tick(60)
+    clock.tick(FPS)
 
 pygame.quit()
 bus.close() 
