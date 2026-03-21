@@ -45,9 +45,9 @@ FRONT_BOX = pygame.Rect(510, 95, 175, 170)
 
 LEFT_CENTER_X = 229
 RIGHT_CENTER_X = 591
-CENTER_Y = 404
+CENTER_Y = 398
 
-GAUGE_RADIUS = 82
+GAUGE_RADIUS = 77.0
 ARC_START_DEG = 226.0
 ARC_END_DEG = 314.0
 
@@ -96,16 +96,18 @@ def read_sensor():
     return roll, pitch
 
 def gauge_theta(angle_deg):
-    a = clamp(angle_deg, -45, 45)
+    # clamp to real display range
+    a = clamp(angle_deg, -45.0, 45.0)
 
-    # map full angle range to full dial width
-    frac = (a + 45) / 90.0
+    # normalize (-45 → 0, +45 → 1)
+    t = (a + 45.0) / 90.0
 
-    # tweak these to match your exact gauge shape
-    START = 230.0
-    END = 310.0
+    # FIX: compress ends so needle doesn't overshoot visually
+    t = 0.1 + t * 0.8   # trims edges
 
-    deg = START + frac * (END - START)
+    # map to arc (wider usable range)
+    deg = 200 + t * 140   # ← THIS is the real fix
+
     return math.radians(deg)
 
 def pitch_color(a):
