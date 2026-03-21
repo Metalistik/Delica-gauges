@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from luma.core.interface.serial import spi
 from luma.core.render import canvas
-from luma.lcd.device import gc9a01
+from luma.lcd.device import st7789
 
 # ----------------------------
 # Display setup
@@ -18,7 +18,7 @@ serial = spi(
     bus_speed_hz=40000000
 )
 
-device = gc9a01(
+device = st7789(
     serial,
     width=240,
     height=240,
