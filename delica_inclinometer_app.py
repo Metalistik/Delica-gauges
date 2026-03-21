@@ -33,9 +33,9 @@ screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 pygame.display.set_caption("Delica Inclinometer")
 clock = pygame.time.Clock()
 
-font_big = pygame.font.SysFont("dejavusans", 32, bold=True)
-font_med = pygame.font.SysFont("dejavusans", 20, bold=True)
-font_small = pygame.font.SysFont("dejavusans", 16)
+font_big = pygame.font.SysFont("dejavusans", 30, bold=True)
+font_med = pygame.font.SysFont("dejavusans", 18, bold=True)
+font_small = pygame.font.SysFont("dejavusans", 15, bold=True)
 font_btn = pygame.font.SysFont("dejavusans", 18, bold=True)
 
 background = pygame.image.load("background.png").convert()
@@ -45,24 +45,24 @@ car_side_raw = pygame.image.load("car_side.png").convert_alpha()
 car_front_raw = pygame.image.load("car_front.png").convert_alpha()
 
 # =========================
-# Layout tuning
+# Layout
 # =========================
-SIDE_BOX  = pygame.Rect(65, 85, 385, 170)
-FRONT_BOX = pygame.Rect(500, 90, 190, 165)
+SIDE_BOX  = pygame.Rect(72, 92, 395, 182)
+FRONT_BOX = pygame.Rect(515, 92, 178, 182)
 
-PITCH_CENTER = (220, 400)
-ROLL_CENTER  = (580, 400)
-GAUGE_RADIUS = 128
+PITCH_CENTER = (220, 393)
+ROLL_CENTER  = (580, 393)
+GAUGE_RADIUS = 124
 
 ARC_START_DEG = 208.0
 ARC_END_DEG   = 332.0
 
 MAX_NEEDLE_ANGLE = 45.0
-MAX_CAR_ANGLE    = 28.0
+MAX_CAR_ANGLE    = 22.0
 
-SMOOTH = 0.15
+SMOOTH = 0.16
 
-ZERO_BUTTON = pygame.Rect(680, 18, 96, 38)
+ZERO_BUTTON = pygame.Rect(685, 18, 92, 36)
 
 # =========================
 # Helpers
@@ -108,28 +108,28 @@ def gauge_theta(angle_deg):
 def pitch_color(a):
     a = abs(a)
     if a >= 30:
-        return (255, 90, 70)
+        return (255, 95, 70)
     if a >= 20:
-        return (255, 200, 70)
-    return (255, 150, 40)
+        return (255, 205, 70)
+    return (255, 180, 50)
 
 def roll_color(a):
     a = abs(a)
     if a >= 30:
-        return (255, 90, 70)
+        return (255, 95, 70)
     if a >= 20:
-        return (120, 255, 100)
+        return (110, 255, 100)
     return (50, 220, 255)
 
 def draw_glow_line(surface, color, p1, p2):
-    for width, alpha in [(10, 28), (6, 60), (3, 120)]:
+    for width, alpha in [(10, 28), (6, 56), (3, 120)]:
         s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         pygame.draw.line(s, (*color, alpha), p1, p2, width)
         surface.blit(s, (0, 0))
     pygame.draw.line(surface, color, p1, p2, 2)
 
 def draw_glow_circle(surface, color, center, r):
-    for rr, alpha in [(r + 7, 20), (r + 4, 50), (r + 2, 90)]:
+    for rr, alpha in [(r + 7, 18), (r + 4, 46), (r + 2, 92)]:
         s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         pygame.draw.circle(s, (*color, alpha), center, rr)
         surface.blit(s, (0, 0))
@@ -144,8 +144,8 @@ def draw_needle(surface, center, angle_deg, color):
         int(center[1] + (GAUGE_RADIUS - 8) * math.sin(theta)),
     )
     tail = (
-        int(center[0] - 16 * math.cos(theta)),
-        int(center[1] - 16 * math.sin(theta)),
+        int(center[0] - 15 * math.cos(theta)),
+        int(center[1] - 15 * math.sin(theta)),
     )
 
     draw_glow_line(surface, color, tail, tip)
@@ -153,17 +153,15 @@ def draw_needle(surface, center, angle_deg, color):
     draw_glow_circle(surface, (255, 255, 255), center, 3)
 
 def draw_button(surface, rect, text, hovered=False):
-    fill = (22, 28, 38) if not hovered else (34, 42, 56)
-    border = (120, 180, 255) if hovered else (90, 110, 145)
-
+    fill = (20, 28, 40) if not hovered else (32, 40, 58)
+    border = (85, 200, 255)
     pygame.draw.rect(surface, fill, rect, border_radius=10)
     pygame.draw.rect(surface, border, rect, 2, border_radius=10)
-
-    label = font_btn.render(text, True, (230, 240, 255))
+    label = font_btn.render(text, True, (235, 245, 255))
     surface.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
 
 # =========================
-# Scale cars properly
+# Scale cars
 # =========================
 car_side = fit(car_side_raw, SIDE_BOX.width, SIDE_BOX.height)
 car_front = fit(car_front_raw, FRONT_BOX.width, FRONT_BOX.height)
@@ -173,7 +171,7 @@ pitch_lp = LowPass(SMOOTH)
 
 roll_zero = 0.0
 pitch_zero = 0.0
-flash_until = 0
+flash_until = 0.0
 
 def zero_now():
     global roll_zero, pitch_zero, flash_until
@@ -230,29 +228,28 @@ while running:
     front_rect = front_rot.get_rect(center=FRONT_BOX.center)
     screen.blit(front_rot, front_rect)
 
+    # Needles
     draw_needle(screen, PITCH_CENTER, pitch_for_needle, pitch_color(pitch_for_needle))
     draw_needle(screen, ROLL_CENTER, roll_for_needle, roll_color(roll_for_needle))
+
+    # Text
+    pitch_lbl = font_med.render("PITCH", True, pitch_color(pitch_for_needle))
+    roll_lbl  = font_med.render("ROLL", True, roll_color(roll_for_needle))
 
     pitch_txt = font_big.render(f"{pitch:+.1f}°", True, pitch_color(pitch_for_needle))
     roll_txt  = font_big.render(f"{roll:+.1f}°", True, roll_color(roll_for_needle))
 
-    pitch_lbl = font_med.render("PITCH", True, pitch_color(pitch_for_needle))
-    roll_lbl  = font_med.render("ROLL", True, roll_color(roll_for_needle))
+    screen.blit(pitch_lbl, (PITCH_CENTER[0] - pitch_lbl.get_width() // 2, 318))
+    screen.blit(roll_lbl,  (ROLL_CENTER[0]  - roll_lbl.get_width() // 2, 318))
 
-    screen.blit(pitch_lbl, (PITCH_CENTER[0] - pitch_lbl.get_width() // 2, 322))
-    screen.blit(roll_lbl,  (ROLL_CENTER[0]  - roll_lbl.get_width() // 2, 322))
-
-    screen.blit(pitch_txt, (PITCH_CENTER[0] - pitch_txt.get_width() // 2, 348))
-    screen.blit(roll_txt,  (ROLL_CENTER[0]  - roll_txt.get_width() // 2, 348))
+    screen.blit(pitch_txt, (PITCH_CENTER[0] - pitch_txt.get_width() // 2, 343))
+    screen.blit(roll_txt,  (ROLL_CENTER[0]  - roll_txt.get_width() // 2, 343))
 
     draw_button(screen, ZERO_BUTTON, "ZERO", hovered_zero)
 
     if time.time() < flash_until:
         msg = font_small.render("Recalibrated", True, (220, 255, 220))
         screen.blit(msg, (ZERO_BUTTON.left - msg.get_width() - 10, ZERO_BUTTON.centery - msg.get_height() // 2))
-
-    footer = font_small.render("C = zero   ESC = quit", True, (210, 210, 210))
-    screen.blit(footer, (610, 455))
 
     pygame.display.flip()
     clock.tick(30)
