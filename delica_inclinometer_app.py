@@ -11,10 +11,10 @@ def to_int(lo, hi):
 bus = SMBus(1)
 
 # --- INIT BMI160 ---
-bus.write_byte_data(ADDR, 0x7E, 0x11)  # accel normal mode
+bus.write_byte_data(ADDR, 0x7E, 0x11)
 time.sleep(0.05)
-bus.write_byte_data(ADDR, 0x40, 0x28)  # accel config
-bus.write_byte_data(ADDR, 0x41, 0x03)  # ±2g
+bus.write_byte_data(ADDR, 0x40, 0x28)
+bus.write_byte_data(ADDR, 0x41, 0x03)
 
 # --- PYGAME ---
 pygame.init()
@@ -22,22 +22,29 @@ screen = pygame.display.set_mode((800, 480))
 clock = pygame.time.Clock()
 
 font_big = pygame.font.SysFont("dejavusans", 36)
-font_small = pygame.font.SysFont("dejavusans", 24)
+font_small = pygame.font.SysFont("dejavusans", 20)
 
-overlay = pygame.image.load("delica_overlay.png")
-overlay = pygame.transform.scale(overlay, (800, 480))
+# --- LOAD ASSETS ---
+bg = pygame.image.load("background.png").convert()
+bg = pygame.transform.scale(bg, (800, 480))
 
-# --- GAUGE SETTINGS (TUNE IF NEEDED) ---
+car_side = pygame.image.load("car_side.png").convert_alpha()
+car_front = pygame.image.load("car_front.png").convert_alpha()
+
+# --- POSITIONS (ADJUST ONCE IF NEEDED) ---
+SIDE_POS  = (250, 200)
+FRONT_POS = (550, 200)
+
 LEFT_CENTER  = (220, 400)
 RIGHT_CENTER = (580, 400)
 RADIUS = 140
 
-# smoothing
+# --- SMOOTHING ---
 roll_smooth = 0
 pitch_smooth = 0
-SMOOTHING = 0.15
+SMOOTH = 0.15
 
-# --- READ SENSOR ---
+# --- SENSOR READ ---
 def read():
     d = bus.read_i2c_block_data(ADDR, 0x12, 6)
 
@@ -50,25 +57,22 @@ def read():
 
     return roll, pitch
 
-# --- DRAW GLOW NEEDLE ---
+# --- CLEAN NEEDLE ---
 def draw_needle(center, angle, color):
     rad = math.radians(angle)
 
     x = center[0] + RADIUS * math.sin(rad)
     y = center[1] - RADIUS * math.cos(rad)
 
-    # glow layers
-    for i in range(6):
-        pygame.draw.line(
-            screen,
-            (*color, 40),
-            center,
-            (x, y),
-            10 - i*2
-        )
+    # glow
+    for w in (8, 5, 3):
+        pygame.draw.line(screen, (*color, 80), center, (x, y), w)
 
-    # core needle
-    pygame.draw.line(screen, color, center, (x, y), 3)
+    # core line
+    pygame.draw.line(screen, color, center, (x, y), 2)
+
+    # center pivot
+    pygame.draw.circle(screen, color, center, 4)
 
 # --- MAIN LOOP ---
 while True:
@@ -80,24 +84,25 @@ while True:
     roll, pitch = read()
 
     # smooth motion
-    roll_smooth  += (roll  - roll_smooth)  * SMOOTHING
-    pitch_smooth += (pitch - pitch_smooth) * SMOOTHING
+    roll_smooth  += (roll  - roll_smooth)  * SMOOTH
+    pitch_smooth += (pitch - pitch_smooth) * SMOOTH
 
-    screen.fill((0, 0, 0))
+    # --- DRAW BACKGROUND ---
+    screen.blit(bg, (0, 0))
 
-    # --- CAR ANIMATION ---
-    # side view = pitch
-    side = pygame.transform.rotozoom(overlay, -pitch_smooth * 0.4, 1)
-    rect = side.get_rect(center=(400, 240))
-    screen.blit(side, rect)
+    # --- SIDE CAR (PITCH) ---
+    side_rot = pygame.transform.rotozoom(car_side, -pitch_smooth, 1)
+    side_rect = side_rot.get_rect(center=SIDE_POS)
+    screen.blit(side_rot, side_rect)
 
-    # front view = roll (subtle overlay effect)
-    front = pygame.transform.rotozoom(overlay, roll_smooth * 0.2, 1)
-    screen.blit(front, (0, 0), special_flags=pygame.BLEND_ADD)
+    # --- FRONT CAR (ROLL) ---
+    front_rot = pygame.transform.rotozoom(car_front, roll_smooth, 1)
+    front_rect = front_rot.get_rect(center=FRONT_POS)
+    screen.blit(front_rot, front_rect)
 
     # --- NEEDLES ---
-    draw_needle(LEFT_CENTER, pitch_smooth, (255, 120, 0))   # pitch
-    draw_needle(RIGHT_CENTER, roll_smooth, (0, 200, 255))   # roll
+    draw_needle(LEFT_CENTER, pitch_smooth, (255,120,0))
+    draw_needle(RIGHT_CENTER, roll_smooth, (0,200,255))
 
     # --- TEXT ---
     screen.blit(font_big.render(f"{pitch_smooth:+.1f}°", True, (255,120,0)), (170, 360))
@@ -107,4 +112,4 @@ while True:
     screen.blit(font_small.render("ROLL", True, (0,200,255)), (530, 330))
 
     pygame.display.flip()
-    clock.tick(30)
+    clock.tick(30) 
