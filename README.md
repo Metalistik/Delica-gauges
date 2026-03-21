@@ -1,0 +1,1 @@
+Add delica_overlay.png and run python3 delica_inclinometer_app.py
