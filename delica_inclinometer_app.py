@@ -43,8 +43,8 @@ car_front_raw = pygame.image.load("car_front.png").convert_alpha()
 SIDE_BOX = pygame.Rect(78, 92, 370, 175)
 FRONT_BOX = pygame.Rect(510, 95, 175, 170)
 
-LEFT_CENTER_X = 220
-RIGHT_CENTER_X = 580
+LEFT_CENTER_X = 230
+RIGHT_CENTER_X = 590
 CENTER_Y = 404
 GAUGE_RADIUS = 88
 
@@ -231,4 +231,4 @@ while running:
     clock.tick(FPS)
 
 pygame.quit()
-bus.close() 
+bus.close()
