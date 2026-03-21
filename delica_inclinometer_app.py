@@ -137,28 +137,39 @@ def draw_button(surface, rect, text, hovered=False):
 def draw_needle(surface, center_x, center_y, angle_deg, color):
     a = clamp(angle_deg, -45.0, 45.0)
     t = (a + 45.0) / 90.0
+    theta = math.radians(180 + t * 180)
 
-    # full gauge sweep
-    deg = 180.0 + t * 180.0
-    theta = math.radians(deg)
-
-    RX = 118   # horizontal radius
-    RY = 78    # vertical radius
+    RX, RY = 118, 78
 
     tip = (
-        int(center_x + RX * math.cos(theta)),
-        int(center_y + RY * math.sin(theta)),
-    )
-    tail = (
-        int(center_x - 6 * math.cos(theta)),
-        int(center_y - 6 * math.sin(theta)),
+        center_x + RX * math.cos(theta),
+        center_y + RY * math.sin(theta),
     )
 
-    pygame.draw.line(surface, color, tail, tip, 4)
-    pygame.draw.line(surface, (255, 255, 255), tail, tip, 1)
-    pygame.draw.circle(surface, color, tip, 4)
-    pygame.draw.circle(surface, color, (center_x, center_y), 3)
-    pygame.draw.circle(surface, (255, 255, 255), (center_x, center_y), 1)
+    base_left = (
+        center_x + 8 * math.cos(theta + math.pi/2),
+        center_y + 8 * math.sin(theta + math.pi/2),
+    )
+
+    base_right = (
+        center_x + 8 * math.cos(theta - math.pi/2),
+        center_y + 8 * math.sin(theta - math.pi/2),
+    )
+
+    # glow
+    for w, alpha in [(12, 30), (8, 60)]:
+        glow = pygame.Surface((800,480), pygame.SRCALPHA)
+        pygame.draw.line(glow, (*color, alpha), (center_x, center_y), tip, w)
+        surface.blit(glow, (0,0))
+
+    # main needle (triangle)
+    pygame.draw.polygon(surface, color, [
+        base_left,
+        base_right,
+        tip
+    ])
+
+    pygame.draw.circle(surface, (255,255,255), (int(center_x), int(center_y)), 4)
 
 car_side = fit(car_side_raw, SIDE_BOX.width, SIDE_BOX.height)
 car_front = fit(car_front_raw, FRONT_BOX.width, FRONT_BOX.height)
