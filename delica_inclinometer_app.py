@@ -96,9 +96,16 @@ def read_sensor():
     return roll, pitch
 
 def gauge_theta(angle_deg):
-    a = clamp(angle_deg, -MAX_NEEDLE_ANGLE, MAX_NEEDLE_ANGLE)
-    frac = (a + MAX_NEEDLE_ANGLE) / (2 * MAX_NEEDLE_ANGLE)
-    deg = ARC_START_DEG + frac * (ARC_END_DEG - ARC_START_DEG)
+    a = clamp(angle_deg, -45, 45)
+
+    # map full angle range to full dial width
+    frac = (a + 45) / 90.0
+
+    # tweak these to match your exact gauge shape
+    START = 230.0
+    END = 310.0
+
+    deg = START + frac * (END - START)
     return math.radians(deg)
 
 def pitch_color(a):
