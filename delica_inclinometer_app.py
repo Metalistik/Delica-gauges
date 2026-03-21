@@ -21,7 +21,7 @@ overlay = pygame.image.load("delica_overlay.png")
 overlay = pygame.transform.scale(overlay, (800, 480))
 
 def read():
-    d = bus.read_i2c_block_data(ADDR, 0x28, 6)
+    d = bus.read_i2c_block_data(ADDR, 0x28 | 0x80, 6)
     x = to_int(d[0], d[1]) * 0.000061
     y = to_int(d[2], d[3]) * 0.000061
     z = to_int(d[4], d[5]) * 0.000061
