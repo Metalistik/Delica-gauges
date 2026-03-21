@@ -1,80 +1,62 @@
-#!/usr/bin/env python3
-
 import time
-from math import cos, sin, radians
-from PIL import Image, ImageDraw, ImageFont
+import spidev
+import RPi.GPIO as GPIO
+from PIL import Image, ImageDraw
 
-from luma.core.interface.serial import spi
-from luma.core.render import canvas
-from luma.lcd.device import gc9a01
+DC = 25
+RST = 24
 
-# --------------------------
-# DISPLAY SETUP
-# --------------------------
-serial = spi(
-    port=0,
-    device=0,
-    gpio_DC=25,
-    gpio_RST=24,
-    bus_speed_hz=40000000
-)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(DC, GPIO.OUT)
+GPIO.setup(RST, GPIO.OUT)
 
-device = gc9a01(serial, width=240, height=240, rotate=0)
+spi = spidev.SpiDev()
+spi.open(0, 0)
+spi.max_speed_hz = 40000000
 
-# --------------------------
-# FONT
-# --------------------------
-try:
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-except:
-    font = ImageFont.load_default()
+def cmd(c):
+    GPIO.output(DC, 0)
+    spi.writebytes([c])
 
-# --------------------------
-# VOLTMETER DRAW
-# --------------------------
-def draw_voltmeter(draw, voltage):
-    cx, cy = 120, 120
-    radius = 100
+def data(d):
+    GPIO.output(DC, 1)
+    spi.writebytes(d)
 
-    # draw circle
-    draw.ellipse(
-        (cx - radius, cy - radius, cx + radius, cy + radius),
-        outline="white"
-    )
+def reset():
+    GPIO.output(RST, 0)
+    time.sleep(0.1)
+    GPIO.output(RST, 1)
+    time.sleep(0.1)
 
-    # map voltage (0–15V) to angle (-120 to +120 degrees)
-    angle = -120 + (voltage / 15.0) * 240
-    angle_rad = radians(angle)
+def init():
+    reset()
+    cmd(0xEF)
+    cmd(0xEB); data([0x14])
+    cmd(0xFE)
+    cmd(0xEF)
+    cmd(0x36); data([0x48])
+    cmd(0x3A); data([0x05])
+    cmd(0x11)
+    time.sleep(0.12)
+    cmd(0x29)
 
-    # needle end
-    nx = cx + int(radius * 0.8 * cos(angle_rad))
-    ny = cy + int(radius * 0.8 * sin(angle_rad))
+def show(image):
+    img = image.convert("RGB")
+    data_bytes = list(img.tobytes())
+    cmd(0x2A); data([0,0,0,239])
+    cmd(0x2B); data([0,0,0,239])
+    cmd(0x2C)
+    data(data_bytes)
 
-    # draw needle
-    draw.line((cx, cy, nx, ny), fill="red", width=3)
-
-    # center dot
-    draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill="red")
-
-    # voltage text
-    draw.text((70, 180), f"{voltage:.1f}V", fill="white", font=font)
-
-
-# --------------------------
-# MAIN LOOP (TEST SWEEP)
-# --------------------------
-v = 0.0
-direction = 1
+init()
 
 while True:
-    with canvas(device) as draw:
-        draw_voltmeter(draw, v)
+    img = Image.new("RGB", (240,240), "black")
+    draw = ImageDraw.Draw(img)
 
-    v += direction * 0.1
+    # simple test
+    draw.ellipse((20,20,220,220), outline="white")
+    draw.text((90,110), "12.3V", fill="white")
 
-    if v >= 15:
-        direction = -1
-    elif v <= 0:
-        direction = 1
-
-    time.sleep(0.03) 
+    show(img)
+    time.sleep(0.1) 
