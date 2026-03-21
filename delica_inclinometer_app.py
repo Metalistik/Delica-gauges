@@ -13,37 +13,39 @@ def to_int(lo, hi):
 bus = SMBus(1)
 
 # LSM6DS3 setup
-bus.write_byte_data(ADDR, 0x10, 0x60)  # CTRL1_XL: accel on
-bus.write_byte_data(ADDR, 0x11, 0x00)  # CTRL2_G: gyro off
-bus.write_byte_data(ADDR, 0x12, 0x44)  # CTRL3_C: BDU + IF_INC
+# CTRL1_XL: accel 104 Hz, ±2g
+bus.write_byte_data(ADDR, 0x10, 0x40)
+
+# CTRL3_C: BDU=1, IF_INC=1
+bus.write_byte_data(ADDR, 0x12, 0x44)
+
+time.sleep(0.1)
+
+who = bus.read_byte_data(ADDR, 0x0F)
 
 pygame.init()
 screen = pygame.display.set_mode((800, 480))
-font = pygame.font.SysFont("dejavusans", 30)
+font = pygame.font.SysFont("dejavusans", 32)
+small = pygame.font.SysFont("dejavusans", 24)
+clock = pygame.time.Clock()
 
-overlay = pygame.image.load("delica_overlay.png")
-overlay = pygame.transform.scale(overlay, (800, 480))
-
-def read():
+def read_accel():
+    # Read accel registers OUTX_L_XL .. OUTZ_H_XL
     d = bus.read_i2c_block_data(ADDR, 0x28, 6)
-    x = to_int(d[0], d[1]) * 0.000061
-    y = to_int(d[2], d[3]) * 0.000061
-    z = to_int(d[4], d[5]) * 0.000061
+
+    x_raw = to_int(d[0], d[1])
+    y_raw = to_int(d[2], d[3])
+    z_raw = to_int(d[4], d[5])
+
+    # ±2g => 0.061 mg/LSB
+    x = x_raw * 0.000061
+    y = y_raw * 0.000061
+    z = z_raw * 0.000061
 
     roll = math.degrees(math.atan2(y, z))
     pitch = math.degrees(math.atan2(-x, math.sqrt(y*y + z*z)))
-    return roll, pitch
 
-def clamp(v, lo, hi):
-    return max(lo, min(hi, v))
-
-def angle_to_arc_x(angle, cx, radius):
-    angle = clamp(angle, -45, 45)
-    frac = (angle + 45.0) / 90.0
-    theta = math.radians(210 + frac * 120)  # left end to right end
-    x = int(cx + radius * math.cos(theta))
-    y = int(400 + radius * math.sin(theta))
-    return x, y
+    return x_raw, y_raw, z_raw, x, y, z, roll, pitch
 
 while True:
     for e in pygame.event.get():
@@ -52,21 +54,30 @@ while True:
         if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
             raise SystemExit
 
-    r, p = read()
+    x_raw, y_raw, z_raw, x, y, z, roll, pitch = read_accel()
 
-    screen.blit(overlay, (0, 0))
+    screen.fill((0, 0, 0))
 
-    # left gauge = pitch
-    px, py = angle_to_arc_x(p, 220, 110)
+    lines = [
+        f"WHO_AM_I: 0x{who:02X}",
+        f"X raw: {x_raw}",
+        f"Y raw: {y_raw}",
+        f"Z raw: {z_raw}",
+        f"X g:   {x:.4f}",
+        f"Y g:   {y:.4f}",
+        f"Z g:   {z:.4f}",
+        f"ROLL:  {roll:.2f}",
+        f"PITCH: {pitch:.2f}",
+        "",
+        "Tilt the board now.",
+        "ESC to quit.",
+    ]
 
-    # right gauge = roll
-    rx, ry = angle_to_arc_x(r, 580, 110)
-
-    pygame.draw.circle(screen, (0, 255, 0), (px, py), 10)
-    pygame.draw.circle(screen, (0, 255, 0), (rx, ry), 10)
-
-    screen.blit(font.render(f"R {r:.1f}", True, (255, 255, 255)), (20, 20))
-    screen.blit(font.render(f"P {p:.1f}", True, (255, 255, 255)), (680, 20))
+    y_pos = 30
+    for i, line in enumerate(lines):
+        surf = font.render(line, True, (255, 255, 255)) if i < 9 else small.render(line, True, (180, 180, 180))
+        screen.blit(surf, (40, y_pos))
+        y_pos += 38
 
     pygame.display.flip()
-    time.sleep(0.03)
+    clock.tick(20) 
