@@ -1,195 +1,110 @@
 #!/usr/bin/env python3
-import math
-import time
-import pygame
+import math, time, pygame
 from smbus2 import SMBus
 
-# =========================
-# BMI160 settings
-# =========================
 ADDR = 0x69
 
-REG_CHIP_ID   = 0x00
-REG_DATA_START = 0x12
-REG_ACC_CONF  = 0x40
-REG_ACC_RANGE = 0x41
-REG_CMD       = 0x7E
-
-CMD_ACC_NORMAL = 0x11
-CMD_GYR_NORMAL = 0x15
-
-SCREEN_W = 800
-SCREEN_H = 480
-
-# =========================
-# Helpers
-# =========================
-def to_int16(lo, hi):
+def to_int(lo, hi):
     v = (hi << 8) | lo
     return v - 65536 if v & 0x8000 else v
 
-def clamp(v, lo, hi):
-    return max(lo, min(hi, v))
-
-class LowPass:
-    def __init__(self, alpha=0.15):
-        self.alpha = alpha
-        self.ready = False
-        self.value = 0.0
-
-    def update(self, x):
-        if not self.ready:
-            self.value = x
-            self.ready = True
-        else:
-            self.value += self.alpha * (x - self.value)
-        return self.value
-
-# =========================
-# BMI160 init
-# =========================
 bus = SMBus(1)
 
-chip_id = bus.read_byte_data(ADDR, REG_CHIP_ID)
-if chip_id != 0xD1:
-    raise RuntimeError(f"Expected BMI160 chip ID 0xD1, got 0x{chip_id:02X} at address 0x{ADDR:02X}")
+# --- INIT BMI160 ---
+bus.write_byte_data(ADDR, 0x7E, 0x11)  # accel normal mode
+time.sleep(0.05)
+bus.write_byte_data(ADDR, 0x40, 0x28)  # accel config
+bus.write_byte_data(ADDR, 0x41, 0x03)  # ±2g
 
-# Power up accelerometer and gyro
-bus.write_byte_data(ADDR, REG_CMD, CMD_ACC_NORMAL)
-time.sleep(0.08)
-bus.write_byte_data(ADDR, REG_CMD, CMD_GYR_NORMAL)
-time.sleep(0.10)
-
-# Accel config: 100 Hz, ±2g
-bus.write_byte_data(ADDR, REG_ACC_CONF, 0x28)
-time.sleep(0.02)
-bus.write_byte_data(ADDR, REG_ACC_RANGE, 0x03)
-time.sleep(0.02)
-
-# =========================
-# Pygame init
-# =========================
+# --- PYGAME ---
 pygame.init()
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("Delica Inclinometer - BMI160")
-font = pygame.font.SysFont("dejavusans", 28, bold=True)
-small = pygame.font.SysFont("dejavusans", 20)
+screen = pygame.display.set_mode((800, 480))
 clock = pygame.time.Clock()
 
-# IMPORTANT:
-# Make sure delica_overlay.png is already exactly 800x480
-overlay = pygame.image.load("delica_overlay.png").convert()
+font_big = pygame.font.SysFont("dejavusans", 36)
+font_small = pygame.font.SysFont("dejavusans", 24)
 
-# Filters
-roll_filter = LowPass(0.15)
-pitch_filter = LowPass(0.15)
+overlay = pygame.image.load("delica_overlay.png")
+overlay = pygame.transform.scale(overlay, (800, 480))
 
-# Zero offsets
-roll_zero = 0.0
-pitch_zero = 0.0
+# --- GAUGE SETTINGS (TUNE IF NEEDED) ---
+LEFT_CENTER  = (220, 400)
+RIGHT_CENTER = (580, 400)
+RADIUS = 140
 
-# =========================
-# Sensor functions
-# =========================
-def read_accel():
-    # BMI160 accel starts at 0x12:
-    # X_L, X_H, Y_L, Y_H, Z_L, Z_H
-    d = bus.read_i2c_block_data(ADDR, REG_DATA_START, 6)
+# smoothing
+roll_smooth = 0
+pitch_smooth = 0
+SMOOTHING = 0.15
 
-    x_raw = to_int16(d[0], d[1])
-    y_raw = to_int16(d[2], d[3])
-    z_raw = to_int16(d[4], d[5])
+# --- READ SENSOR ---
+def read():
+    d = bus.read_i2c_block_data(ADDR, 0x12, 6)
 
-    # BMI160 ±2g = 16384 LSB/g
-    x = x_raw / 16384.0
-    y = y_raw / 16384.0
-    z = z_raw / 16384.0
+    x = to_int(d[0], d[1]) * 0.000061
+    y = to_int(d[2], d[3]) * 0.000061
+    z = to_int(d[4], d[5]) * 0.000061
 
-    return x_raw, y_raw, z_raw, x, y, z
-
-def compute_angles(x, y, z):
     roll = math.degrees(math.atan2(y, z))
-    pitch = math.degrees(math.atan2(-x, math.sqrt(y * y + z * z)))
+    pitch = math.degrees(math.atan2(-x, math.sqrt(y*y + z*z)))
+
     return roll, pitch
 
-def zero_now():
-    global roll_zero, pitch_zero
-    _, _, _, x, y, z = read_accel()
-    r, p = compute_angles(x, y, z)
-    roll_zero = r
-    pitch_zero = p
+# --- DRAW GLOW NEEDLE ---
+def draw_needle(center, angle, color):
+    rad = math.radians(angle)
 
-# =========================
-# UI helpers
-# =========================
-def angle_color(a):
-    a = abs(a)
-    if a >= 30:
-        return (255, 70, 70)
-    if a >= 20:
-        return (255, 210, 40)
-    return (255, 255, 255)
+    x = center[0] + RADIUS * math.sin(rad)
+    y = center[1] - RADIUS * math.cos(rad)
 
-def gauge_point(angle_deg, cx, cy, radius):
-    """
-    Tuned for your current 800x480 overlay.
-    """
-    angle_deg = clamp(angle_deg, -45.0, 45.0)
-    frac = (angle_deg + 45.0) / 90.0
-    theta = math.radians(214.0 + frac * 112.0)
-    x = int(cx + radius * math.cos(theta))
-    y = int(cy + radius * math.sin(theta))
-    return x, y
+    # glow layers
+    for i in range(6):
+        pygame.draw.line(
+            screen,
+            (*color, 40),
+            center,
+            (x, y),
+            10 - i*2
+        )
 
-# Zero once at startup
-zero_now()
+    # core needle
+    pygame.draw.line(screen, color, center, (x, y), 3)
 
-# =========================
-# Main loop
-# =========================
-running = True
-while running:
+# --- MAIN LOOP ---
+while True:
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
-            running = False
-        elif e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_ESCAPE:
-                running = False
-            elif e.key == pygame.K_c:
-                zero_now()
+            pygame.quit()
+            exit()
 
-    x_raw, y_raw, z_raw, x, y, z = read_accel()
-    roll, pitch = compute_angles(x, y, z)
+    roll, pitch = read()
 
-    roll -= roll_zero
-    pitch -= pitch_zero
+    # smooth motion
+    roll_smooth  += (roll  - roll_smooth)  * SMOOTHING
+    pitch_smooth += (pitch - pitch_smooth) * SMOOTHING
 
-    roll = roll_filter.update(roll)
-    pitch = pitch_filter.update(pitch)
+    screen.fill((0, 0, 0))
 
-    roll = clamp(roll, -45.0, 45.0)
-    pitch = clamp(pitch, -45.0, 45.0)
+    # --- CAR ANIMATION ---
+    # side view = pitch
+    side = pygame.transform.rotozoom(overlay, -pitch_smooth * 0.4, 1)
+    rect = side.get_rect(center=(400, 240))
+    screen.blit(side, rect)
 
-    screen.blit(overlay, (0, 0))
+    # front view = roll (subtle overlay effect)
+    front = pygame.transform.rotozoom(overlay, roll_smooth * 0.2, 1)
+    screen.blit(front, (0, 0), special_flags=pygame.BLEND_ADD)
 
-    # Tuned to your current overlay layout
-    pitch_dot = gauge_point(pitch, 235, 495, 128)
-    roll_dot  = gauge_point(roll,  618, 495, 128)
+    # --- NEEDLES ---
+    draw_needle(LEFT_CENTER, pitch_smooth, (255, 120, 0))   # pitch
+    draw_needle(RIGHT_CENTER, roll_smooth, (0, 200, 255))   # roll
 
-    pygame.draw.circle(screen, angle_color(pitch), pitch_dot, 10)
-    pygame.draw.circle(screen, (255, 255, 255), pitch_dot, 10, 2)
+    # --- TEXT ---
+    screen.blit(font_big.render(f"{pitch_smooth:+.1f}°", True, (255,120,0)), (170, 360))
+    screen.blit(font_big.render(f"{roll_smooth:+.1f}°", True, (0,200,255)), (530, 360))
 
-    pygame.draw.circle(screen, angle_color(roll), roll_dot, 10)
-    pygame.draw.circle(screen, (255, 255, 255), roll_dot, 10, 2)
-
-    # Text
-    screen.blit(font.render(f"P {pitch:+.1f}", True, (255, 255, 255)), (25, 20))
-    screen.blit(font.render(f"R {roll:+.1f}", True, (255, 255, 255)), (650, 20))
-    screen.blit(small.render(f"CHIP 0x{chip_id:02X}", True, (220, 220, 220)), (330, 20))
-    screen.blit(small.render("C = zero   ESC = quit", True, (220, 220, 220)), (560, 445))
+    screen.blit(font_small.render("PITCH", True, (255,120,0)), (170, 330))
+    screen.blit(font_small.render("ROLL", True, (0,200,255)), (530, 330))
 
     pygame.display.flip()
     clock.tick(30)
-
-pygame.quit()
-bus.close()
