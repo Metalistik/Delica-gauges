@@ -168,6 +168,7 @@ def draw_needle(surface, center_x, center_y, angle_deg, color):
         base_right,
         tip
     ])
+    pygame.draw.line(surface, (*color, 120), (center_x, center_y), tip, 3)
 
     pygame.draw.circle(surface, (255,255,255), (int(center_x), int(center_y)), 4)
 
