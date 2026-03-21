@@ -45,7 +45,7 @@ FRONT_BOX = pygame.Rect(510, 95, 175, 170)
 
 LEFT_CENTER_X = 229
 RIGHT_CENTER_X = 591
-CENTER_Y = 398
+CENTER_Y = 404
 
 GAUGE_RADIUS = 77.0
 ARC_START_DEG = 226.0
@@ -135,11 +135,19 @@ def draw_button(surface, rect, text, hovered=False):
     surface.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
 
 def draw_needle(surface, center_x, center_y, angle_deg, color):
-    theta = gauge_theta(angle_deg)
+    a = clamp(angle_deg, -45.0, 45.0)
+    t = (a + 45.0) / 90.0
+
+    # full gauge sweep
+    deg = 180.0 + t * 180.0
+    theta = math.radians(deg)
+
+    RX = 118   # horizontal radius
+    RY = 78    # vertical radius
 
     tip = (
-        int(center_x + GAUGE_RADIUS * math.cos(theta)),
-        int(center_y + GAUGE_RADIUS * math.sin(theta)),
+        int(center_x + RX * math.cos(theta)),
+        int(center_y + RY * math.sin(theta)),
     )
     tail = (
         int(center_x - 6 * math.cos(theta)),
