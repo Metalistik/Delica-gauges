@@ -4,27 +4,21 @@ import time
 import pygame
 from smbus2 import SMBus
 
-# =========================
-# BMI160 / I2C
-# =========================
 ADDR = 0x69
 
-def to_int(lo: int, hi: int) -> int:
+def to_int(lo, hi):
     v = (hi << 8) | lo
     return v - 65536 if v & 0x8000 else v
 
 bus = SMBus(1)
 
 # BMI160 init
-bus.write_byte_data(ADDR, 0x7E, 0x11)  # accel normal mode
+bus.write_byte_data(ADDR, 0x7E, 0x11)
 time.sleep(0.05)
-bus.write_byte_data(ADDR, 0x40, 0x28)  # accel config
-bus.write_byte_data(ADDR, 0x41, 0x03)  # ±2g
+bus.write_byte_data(ADDR, 0x40, 0x28)
+bus.write_byte_data(ADDR, 0x41, 0x03)
 time.sleep(0.03)
 
-# =========================
-# Screen / assets
-# =========================
 SCREEN_W = 800
 SCREEN_H = 480
 FPS = 30
@@ -45,16 +39,15 @@ background = pygame.transform.smoothscale(background, (SCREEN_W, SCREEN_H))
 car_side_raw = pygame.image.load("car_side.png").convert_alpha()
 car_front_raw = pygame.image.load("car_front.png").convert_alpha()
 
-# =========================
 # Layout
-# =========================
 SIDE_BOX = pygame.Rect(78, 92, 370, 175)
 FRONT_BOX = pygame.Rect(510, 95, 175, 170)
 
-PITCH_CENTER = (220, 416)
-ROLL_CENTER = (580, 416)
+LEFT_CENTER_X = 220
+RIGHT_CENTER_X = 580
+CENTER_Y = 404
+GAUGE_RADIUS = 88
 
-GAUGE_RADIUS = 92
 ARC_START_DEG = 220.0
 ARC_END_DEG = 320.0
 
@@ -64,24 +57,21 @@ SMOOTH = 0.22
 
 ZERO_BUTTON = pygame.Rect(684, 18, 96, 40)
 
-# =========================
-# Helpers
-# =========================
-def clamp(v: float, lo: float, hi: float) -> float:
+def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
-def fit(img: pygame.Surface, w: int, h: int) -> pygame.Surface:
+def fit(img, w, h):
     iw, ih = img.get_size()
     s = min(w / iw, h / ih)
     return pygame.transform.smoothscale(img, (max(1, int(iw * s)), max(1, int(ih * s))))
 
 class LowPass:
-    def __init__(self, alpha: float):
+    def __init__(self, alpha):
         self.alpha = alpha
         self.ready = False
         self.value = 0.0
 
-    def update(self, x: float) -> float:
+    def update(self, x):
         if not self.ready:
             self.value = x
             self.ready = True
@@ -89,13 +79,13 @@ class LowPass:
             self.value += self.alpha * (x - self.value)
         return self.value
 
-def build_rotation_cache(img: pygame.Surface, min_deg: int, max_deg: int) -> dict[int, pygame.Surface]:
-    cache: dict[int, pygame.Surface] = {}
+def build_rotation_cache(img, min_deg, max_deg):
+    cache = {}
     for deg in range(int(min_deg), int(max_deg) + 1):
         cache[deg] = pygame.transform.rotozoom(img, deg, 1.0)
     return cache
 
-def read_sensor() -> tuple[float, float]:
+def read_sensor():
     d = bus.read_i2c_block_data(ADDR, 0x12, 6)
     x = to_int(d[0], d[1]) / 16384.0
     y = to_int(d[2], d[3]) / 16384.0
@@ -105,13 +95,13 @@ def read_sensor() -> tuple[float, float]:
     pitch = math.degrees(math.atan2(-x, math.sqrt(y * y + z * z)))
     return roll, pitch
 
-def gauge_theta(angle_deg: float) -> float:
+def gauge_theta(angle_deg):
     a = clamp(angle_deg, -MAX_NEEDLE_ANGLE, MAX_NEEDLE_ANGLE)
     frac = (a + MAX_NEEDLE_ANGLE) / (2 * MAX_NEEDLE_ANGLE)
     deg = ARC_START_DEG + frac * (ARC_END_DEG - ARC_START_DEG)
     return math.radians(deg)
 
-def pitch_color(a: float) -> tuple[int, int, int]:
+def pitch_color(a):
     a = abs(a)
     if a >= 30:
         return (255, 95, 70)
@@ -119,7 +109,7 @@ def pitch_color(a: float) -> tuple[int, int, int]:
         return (255, 210, 80)
     return (255, 220, 90)
 
-def roll_color(a: float) -> tuple[int, int, int]:
+def roll_color(a):
     a = abs(a)
     if a >= 30:
         return (255, 95, 70)
@@ -127,7 +117,7 @@ def roll_color(a: float) -> tuple[int, int, int]:
         return (120, 255, 120)
     return (80, 220, 255)
 
-def draw_button(surface: pygame.Surface, rect: pygame.Rect, text: str, hovered: bool = False) -> None:
+def draw_button(surface, rect, text, hovered=False):
     fill = (22, 30, 42) if not hovered else (34, 44, 60)
     border = (90, 210, 255)
     pygame.draw.rect(surface, fill, rect, border_radius=10)
@@ -135,28 +125,24 @@ def draw_button(surface: pygame.Surface, rect: pygame.Rect, text: str, hovered: 
     label = font_button.render(text, True, (235, 245, 255))
     surface.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
 
-def draw_needle(surface: pygame.Surface, center: tuple[int, int], angle_deg: float, color: tuple[int, int, int]) -> None:
+def draw_needle(surface, center_x, center_y, angle_deg, color):
     theta = gauge_theta(angle_deg)
 
     tip = (
-        int(center[0] + GAUGE_RADIUS * math.cos(theta)),
-        int(center[1] + GAUGE_RADIUS * math.sin(theta)),
+        int(center_x + GAUGE_RADIUS * math.cos(theta)),
+        int(center_y + GAUGE_RADIUS * math.sin(theta)),
     )
     tail = (
-        int(center[0] - 6 * math.cos(theta)),
-        int(center[1] - 6 * math.sin(theta)),
+        int(center_x - 6 * math.cos(theta)),
+        int(center_y - 6 * math.sin(theta)),
     )
 
-    # light glow, cheap enough for Pi Zero 2
     pygame.draw.line(surface, color, tail, tip, 4)
     pygame.draw.line(surface, (255, 255, 255), tail, tip, 1)
     pygame.draw.circle(surface, color, tip, 4)
-    pygame.draw.circle(surface, color, center, 3)
-    pygame.draw.circle(surface, (255, 255, 255), center, 1)
+    pygame.draw.circle(surface, color, (center_x, center_y), 3)
+    pygame.draw.circle(surface, (255, 255, 255), (center_x, center_y), 1)
 
-# =========================
-# Prepare sprites
-# =========================
 car_side = fit(car_side_raw, SIDE_BOX.width, SIDE_BOX.height)
 car_front = fit(car_front_raw, FRONT_BOX.width, FRONT_BOX.height)
 
@@ -170,7 +156,7 @@ roll_zero = 0.0
 pitch_zero = 0.0
 flash_until = 0.0
 
-def zero_now() -> None:
+def zero_now():
     global roll_zero, pitch_zero, flash_until
     r, p = read_sensor()
     roll_zero = r
@@ -179,9 +165,6 @@ def zero_now() -> None:
 
 zero_now()
 
-# =========================
-# Main loop
-# =========================
 running = True
 while running:
     mouse_pos = pygame.mouse.get_pos()
@@ -215,7 +198,6 @@ while running:
 
     screen.blit(background, (0, 0))
 
-    # cars
     side_rot = SIDE_CACHE[pitch_for_car]
     side_rect = side_rot.get_rect(center=SIDE_BOX.center)
     screen.blit(side_rot, side_rect)
@@ -224,22 +206,20 @@ while running:
     front_rect = front_rot.get_rect(center=FRONT_BOX.center)
     screen.blit(front_rot, front_rect)
 
-    # needles
-    draw_needle(screen, PITCH_CENTER, pitch_for_needle, pitch_color(pitch_for_needle))
-    draw_needle(screen, ROLL_CENTER, roll_for_needle, roll_color(roll_for_needle))
+    draw_needle(screen, LEFT_CENTER_X, CENTER_Y, pitch_for_needle, pitch_color(pitch_for_needle))
+    draw_needle(screen, RIGHT_CENTER_X, CENTER_Y, roll_for_needle, roll_color(roll_for_needle))
 
-    # labels + values
     pitch_lbl = font_label.render("PITCH", True, pitch_color(pitch_for_needle))
     roll_lbl = font_label.render("ROLL", True, roll_color(roll_for_needle))
 
     pitch_txt = font_value.render(f"{pitch:+.1f}°", True, pitch_color(pitch_for_needle))
     roll_txt = font_value.render(f"{roll:+.1f}°", True, roll_color(roll_for_needle))
 
-    screen.blit(pitch_lbl, (PITCH_CENTER[0] - pitch_lbl.get_width() // 2, 334))
-    screen.blit(roll_lbl, (ROLL_CENTER[0] - roll_lbl.get_width() // 2, 334))
+    screen.blit(pitch_lbl, (LEFT_CENTER_X - pitch_lbl.get_width() // 2, 334))
+    screen.blit(roll_lbl, (RIGHT_CENTER_X - roll_lbl.get_width() // 2, 334))
 
-    screen.blit(pitch_txt, (PITCH_CENTER[0] - pitch_txt.get_width() // 2, 356))
-    screen.blit(roll_txt, (ROLL_CENTER[0] - roll_txt.get_width() // 2, 356))
+    screen.blit(pitch_txt, (LEFT_CENTER_X - pitch_txt.get_width() // 2, 356))
+    screen.blit(roll_txt, (RIGHT_CENTER_X - roll_txt.get_width() // 2, 356))
 
     draw_button(screen, ZERO_BUTTON, "ZERO", hovered_zero)
 
