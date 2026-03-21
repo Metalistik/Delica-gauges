@@ -21,7 +21,7 @@ time.sleep(0.03)
 
 SCREEN_W = 800
 SCREEN_H = 480
-FPS = 30
+FPS = 24
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
@@ -227,11 +227,11 @@ while running:
 
     screen.blit(background, (0, 0))
 
-    side_rot = SIDE_CACHE[pitch_for_car]
+    side_rot = pygame.transform.rotate(car_side, pitch_for_car)
     side_rect = side_rot.get_rect(center=SIDE_BOX.center)
     screen.blit(side_rot, side_rect)
 
-    front_rot = FRONT_CACHE[-roll_for_car]
+    front_rot = pygame.transform.rotate(car_front, -roll_for_car)
     front_rect = front_rot.get_rect(center=FRONT_BOX.center)
     screen.blit(front_rot, front_rect)
 
