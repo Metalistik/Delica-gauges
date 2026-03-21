@@ -21,7 +21,7 @@ time.sleep(0.03)
 
 SCREEN_W = 800
 SCREEN_H = 480
-FPS = 24
+FPS = 20
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
