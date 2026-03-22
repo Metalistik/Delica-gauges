@@ -4,7 +4,7 @@ import time
 import digitalio
 import board
 from PIL import Image
-from adafruit_rgb_display import gc9a01a
+from adafruit_rgb_display import st7789
 
 print("STARTING...")
 
@@ -23,7 +23,7 @@ rst = digitalio.DigitalInOut(board.D27)  # pin 13
 print("INIT DISPLAY...")
 
 # --- Display init ---
-disp = gc9a01a.GC9A01A(
+disp = st7789.ST7789(
     spi,
     cs=cs,
     dc=dc,
