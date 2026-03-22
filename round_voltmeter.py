@@ -1,62 +1,69 @@
+#!/usr/bin/env python3
 import time
+from PIL import Image, ImageDraw
 import spidev
 import RPi.GPIO as GPIO
-from PIL import Image, ImageDraw
+import gc9a01
 
-DC = 25
-RST = 24
+# ----------------------------
+# Pin setup
+# ----------------------------
+# Change these if your wiring is different
+DC_PIN = 25
+RST_PIN = 27
+BL_PIN = 18      # backlight pin, if connected
+SPI_BUS = 0
+SPI_DEVICE = 0
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(DC, GPIO.OUT)
-GPIO.setup(RST, GPIO.OUT)
+WIDTH = 240
+HEIGHT = 240
 
-spi = spidev.SpiDev()
-spi.open(0, 0)
-spi.max_speed_hz = 40000000
+def main():
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
 
-def cmd(c):
-    GPIO.output(DC, 0)
-    spi.writebytes([c])
+    # Backlight on
+    GPIO.setup(BL_PIN, GPIO.OUT)
+    GPIO.output(BL_PIN, GPIO.HIGH)
 
-def data(d):
-    GPIO.output(DC, 1)
-    spi.writebytes(d)
+    # Initialize display
+    display = gc9a01.GC9A01(
+        port=SPI_BUS,
+        cs=SPI_DEVICE,
+        dc=DC_PIN,
+        rst=RST_PIN,
+        width=WIDTH,
+        height=HEIGHT,
+        rotation=0,      # try 90, 180, or 270 if the image is rotated
+        invert=False
+    )
 
-def reset():
-    GPIO.output(RST, 0)
-    time.sleep(0.1)
-    GPIO.output(RST, 1)
-    time.sleep(0.1)
+    display.init()
+    display.fill(gc9a01.BLACK)
 
-def init():
-    reset()
-    cmd(0xEF)
-    cmd(0xEB); data([0x14])
-    cmd(0xFE)
-    cmd(0xEF)
-    cmd(0x36); data([0x48])
-    cmd(0x3A); data([0x05])
-    cmd(0x11)
-    time.sleep(0.12)
-    cmd(0x29)
+    # Create image buffer
+    image = Image.new("RGB", (WIDTH, HEIGHT), "black")
+    draw = ImageDraw.Draw(image)
 
-def show(image):
-    img = image.convert("RGB")
-    data_bytes = list(img.tobytes())
-    cmd(0x2A); data([0,0,0,239])
-    cmd(0x2B); data([0,0,0,239])
-    cmd(0x2C)
-    data(data_bytes)
+    # Face
+    draw.ellipse((20, 20, 220, 220), fill=(255, 220, 0), outline=(255, 255, 255), width=3)
 
-init()
+    # Eyes
+    draw.ellipse((70, 75, 95, 100), fill="black")
+    draw.ellipse((145, 75, 170, 100), fill="black")
 
-while True:
-    img = Image.new("RGB", (240,240), "black")
-    draw = ImageDraw.Draw(img)
+    # Smile
+    draw.arc((65, 85, 175, 185), start=20, end=160, fill="black", width=6)
 
-    # simple test
-    draw.ellipse((20,20,220,220), outline="white")
-    draw.text((90,110), "12.3V", fill="white")
+    # Push image to display
+    display.display(image)
 
-    show(img)
-    time.sleep(0.1) 
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        display.fill(gc9a01.BLACK)
+        GPIO.cleanup()
+
+if __name__ == "__main__":
+    main() 
