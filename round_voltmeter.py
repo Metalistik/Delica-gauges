@@ -8,18 +8,15 @@ serial = spi(
     port=0,
     device=0,
     gpio_DC=25,
-    gpio_RST=27,
-    bus_speed_hz=40000000   # IMPORTANT
+    gpio_RST=27
 )
 
-# Try different configs for GC9A01
+# Display (minimal compatible config)
 device = st7789(
     serial,
     width=240,
     height=240,
-    rotate=0,
-    h_offset=0,
-    v_offset=0
+    rotate=0
 )
 
 # Create image
@@ -36,8 +33,9 @@ draw.ellipse((145, 80, 170, 105), fill="black")
 # Smile
 draw.arc((60, 90, 180, 180), start=20, end=160, fill="black", width=5)
 
-# Show
+# Display image
 device.display(image)
 
+# Keep running
 while True:
     time.sleep(1)
