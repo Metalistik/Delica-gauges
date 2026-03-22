@@ -18,7 +18,6 @@ device = st7789(
     width=240,
     height=240,
     rotate=0,
-    bgr=True,          # IMPORTANT
     h_offset=0,
     v_offset=0
 )
