@@ -1,10 +1,14 @@
 import spidev
 import RPi.GPIO as GPIO
 import time
-from PIL import Image, ImageDraw
+import math
+from PIL import Image, ImageDraw, ImageFont
 
 DC = 25
 RST = 27
+
+TEMP_MIN = -10
+TEMP_MAX = 40
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
@@ -109,8 +113,10 @@ def set_window(x0, y0, x1, y1):
     data([y0 >> 8, y0 & 0xFF, y1 >> 8, y1 & 0xFF])
     command(0x2C)
 
-def image_to_rgb565_bytes(image):
-    image = image.convert("RGB")
+def show_image(image):
+    set_window(0, 0, 239, 239)
+    GPIO.output(DC, 1)
+
     raw = []
     for y in range(240):
         for x in range(240):
@@ -118,27 +124,61 @@ def image_to_rgb565_bytes(image):
             color = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
             raw.append((color >> 8) & 0xFF)
             raw.append(color & 0xFF)
-    return raw
 
-def show_image(image):
-    set_window(0, 0, 239, 239)
-    GPIO.output(DC, 1)
-    buf = image_to_rgb565_bytes(image)
-    chunk_size = 4096
-    for i in range(0, len(buf), chunk_size):
-        spi.writebytes(buf[i:i + chunk_size])
+    for i in range(0, len(raw), 4096):
+        spi.writebytes(raw[i:i+4096])
 
+def get_font(size):
+    try:
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+    except:
+        return ImageFont.load_default()
+
+def build(temp):
+    img = Image.new("RGB", (240, 240), (10, 12, 18))
+    d = ImageDraw.Draw(img)
+
+    frac = max(0, min(1, (temp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)))
+    segs = 36
+    lit = int(frac * segs)
+
+    # circular bar
+    for i in range(segs):
+        a0 = 140 + i * (260 / segs)
+        a1 = a0 + (260 / segs) - 3
+
+        if i < lit:
+            col = (80, 200, 255) if frac < 0.5 else (255, 120, 60)
+            d.arc((18, 18, 222, 222), start=a0, end=a1, fill=col, width=10)
+        else:
+            d.arc((18, 18, 222, 222), start=a0, end=a1, fill=(40, 40, 45), width=8)
+
+    # center
+    d.ellipse((50, 50, 190, 190), fill=(12, 14, 20))
+
+    # BIG TEMP (this is the part that mattered)
+    f_big = get_font(80)
+    txt = f"{temp:.1f}"
+    w, h = d.textbbox((0, 0), txt, font=f_big)[2:]
+    d.text((120 - w/2, 80), txt, font=f_big, fill=(255, 255, 255))
+
+    # unit
+    f_unit = get_font(28)
+    d.text((105, 140), "°C", font=f_unit, fill=(120, 180, 255))
+
+    return img
+
+# ===== MAIN =====
 init()
 
-img = Image.new("RGB", (240, 240), "black")
-draw = ImageDraw.Draw(img)
-
-draw.ellipse((20, 20, 220, 220), fill=(255, 220, 0))
-draw.ellipse((70, 75, 95, 100), fill="black")
-draw.ellipse((145, 75, 170, 100), fill="black")
-draw.arc((60, 90, 180, 180), start=20, end=160, fill="black", width=6)
-
-show_image(img)
+temp = 10
+t = 0
 
 while True:
-    time.sleep(1)
+    t += 0.05
+    temp = 10 + math.sin(t) * 10  # demo
+
+    img = build(temp)
+    show_image(img)
+
+    time.sleep(0.05)
