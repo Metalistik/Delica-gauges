@@ -1,47 +1,68 @@
-#!/usr/bin/env python3
-
+import spidev
+import RPi.GPIO as GPIO
 import time
-import digitalio
-import board
-from PIL import Image
-from adafruit_rgb_display import st7789
 
-print("STARTING...")
+DC = 25
+RST = 27
 
-# --- SPI setup ---
-spi = board.SPI()
-while not spi.try_lock():
-    pass
-spi.configure(baudrate=12000000, phase=0, polarity=0)
-spi.unlock()
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(DC, GPIO.OUT)
+GPIO.setup(RST, GPIO.OUT)
 
-# --- Pins ---
-cs = digitalio.DigitalInOut(board.CE0)   # pin 24
-dc = digitalio.DigitalInOut(board.D25)   # pin 22
-rst = digitalio.DigitalInOut(board.D27)  # pin 13
+spi = spidev.SpiDev()
+spi.open(0, 0)
+spi.max_speed_hz = 40000000
 
-print("INIT DISPLAY...")
+def command(cmd):
+    GPIO.output(DC, 0)
+    spi.writebytes([cmd])
 
-# --- Display init ---
-disp = st7789.ST7789(
-    spi,
-    cs=cs,
-    dc=dc,
-    rst=rst,
-    width=240,
-    height=240,
-    rotation=90,
-    baudrate=12000000
-)
+def data(val):
+    GPIO.output(DC, 1)
+    spi.writebytes(val)
 
-print("DRAWING...")
+def reset():
+    GPIO.output(RST, 0)
+    time.sleep(0.1)
+    GPIO.output(RST, 1)
+    time.sleep(0.1)
 
-# --- Draw solid red screen ---
-image = Image.new("RGB", (240, 240), (255, 0, 0))
-disp.image(image)
+def init():
+    reset()
+    command(0xEF)
+    command(0xEB)
+    data([0x14])
+    command(0xFE)
+    command(0xEF)
+    command(0x36)
+    data([0x48])
+    command(0x3A)
+    data([0x05])
+    command(0x11)
+    time.sleep(0.12)
+    command(0x29)
 
-print("DONE - HOLDING SCREEN")
+def fill(color):
+    command(0x2A)
+    data([0x00,0x00,0x00,0xEF])
+    command(0x2B)
+    data([0x00,0x00,0x00,0xEF])
+    command(0x2C)
 
-# Keep program running
+    GPIO.output(DC, 1)
+    for _ in range(240*240):
+        spi.writebytes([color >> 8, color & 0xFF])
+
+init()
+
+# Test colors
+fill(0xF800)  # red
+time.sleep(2)
+
+fill(0x07E0)  # green
+time.sleep(2)
+
+fill(0x001F)  # blue
+
 while True:
-    time.sleep(1)
+    pass
