@@ -128,7 +128,11 @@ def draw_icon(d, code, frame):
 def build(temp, high, low, code, smooth, frame):
     img = Image.new("RGB",(240,240),(8,10,14))
     d = ImageDraw.Draw(img)
+    img = Image.new("RGB",(240,240),(8,10,14))
+    d = ImageDraw.Draw(img)
 
+# ADD THIS LINE
+d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
     f = frac(smooth)
     segs = 40
     lit = int(f * segs)
