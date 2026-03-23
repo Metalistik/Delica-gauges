@@ -103,30 +103,30 @@ def color(f):
 # SMALL CLEAN ICONS
 # =========================
 def draw_icon(d, code, frame):
-    cx, cy = 120, 55  # higher + smaller
+    cx, cy = 120, 55  # keep position
 
     if code < 3:
-        # SUN (smaller)
-        d.ellipse((cx-10,cy-10,cx+10,cy+10),(255,200,0))
+        # SUN (medium size)
+        d.ellipse((cx-14,cy-14,cx+14,cy+14),(255,200,0))
         for i in range(8):
             a = i*45 + frame*2
-            x = cx + int(math.cos(math.radians(a))*16)
-            y = cy + int(math.sin(math.radians(a))*16)
-            d.line((cx,cy,x,y),(255,180,0),2)
+            x = cx + int(math.cos(math.radians(a))*22)
+            y = cy + int(math.sin(math.radians(a))*22)
+            d.line((cx,cy,x,y),(255,180,0),3)
 
     elif code < 50:
-        # CLOUD (compact)
-        d.ellipse((cx-18,cy-6,cx,cy+8),(200,200,200))
-        d.ellipse((cx-4,cy-10,cx+14,cy+8),(220,220,220))
+        # CLOUD (balanced size)
+        d.ellipse((cx-22,cy-8,cx+2,cy+10),(200,200,200))
+        d.ellipse((cx-6,cy-12,cx+18,cy+10),(220,220,220))
 
     else:
         # RAIN
-        d.ellipse((cx-18,cy-6,cx,cy+8),(180,180,180))
-        d.ellipse((cx-4,cy-10,cx+14,cy+8),(200,200,200))
+        d.ellipse((cx-22,cy-8,cx+2,cy+10),(180,180,180))
+        d.ellipse((cx-6,cy-12,cx+18,cy+10),(200,200,200))
 
-        for i in range(2):
-            y = cy+12 + ((frame+i*3)%8)
-            d.line((cx-10+i*10,y,cx-10+i*10,y+6),(100,150,255),2)
+        for i in range(3):
+            y = cy+14 + ((frame+i*3)%10)
+            d.line((cx-12+i*10,y,cx-12+i*10,y+7),(100,150,255),2)
 
 # =========================
 # MAIN DRAW (GOOD VERSION)
@@ -164,7 +164,7 @@ def build(temp, high, low, code, smooth, frame):
     d.ellipse((45,45,195,195),(12,14,20))
 
     # ==== BIG TEMP ====
-    f_big = font(90)
+    f_big = font(65)
     txt = f"{temp:.1f}"
     w,h = d.textbbox((0,0),txt,font=f_big)[2:]
     d.text((120-w/2,70),txt,font=f_big,fill=(255,255,255))
