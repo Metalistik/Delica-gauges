@@ -162,7 +162,7 @@ def build(temp, high, low, code, smooth, frame):
     d.text((120-w/2,75),txt,font=f_big,fill=(255,255,255))
 
     # unit
-    d.text((105,135),"°C",font=font(28),fill=(120,180,255))
+    d.text((105,145),"°C",font=font(28),fill=(120,180,255))
 
     # ===== CENTERED HIGH/LOW =====
     if high:
