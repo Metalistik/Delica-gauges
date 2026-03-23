@@ -1,6 +1,7 @@
 import spidev
 import RPi.GPIO as GPIO
 import time
+from PIL import Image, ImageDraw
 
 DC = 25
 RST = 27
@@ -54,9 +55,8 @@ def init():
     command(0x8F); data([0xFF])
 
     command(0xB6); data([0x00, 0x20])
-
-    command(0x36); data([0x08])   # try 0x48 later if needed
-    command(0x3A); data([0x05])   # RGB565
+    command(0x36); data([0x08])
+    command(0x3A); data([0x05])
 
     command(0x90); data([0x08, 0x08, 0x08, 0x08])
     command(0xBD); data([0x06])
@@ -96,7 +96,7 @@ def init():
     command(0x98); data([0x3E, 0x07])
 
     command(0x35)
-    command(0x21)  # display inversion on
+    command(0x21)
     command(0x11)
     time.sleep(0.12)
     command(0x29)
@@ -109,30 +109,36 @@ def set_window(x0, y0, x1, y1):
     data([y0 >> 8, y0 & 0xFF, y1 >> 8, y1 & 0xFF])
     command(0x2C)
 
-def fill(color):
-    set_window(0, 0, 239, 239)
-    hi = (color >> 8) & 0xFF
-    lo = color & 0xFF
-    GPIO.output(DC, 1)
-    chunk = [hi, lo] * 1024
-    pixels = 240 * 240
-    full_chunks = pixels // 1024
-    rem = pixels % 1024
+def image_to_rgb565_bytes(image):
+    image = image.convert("RGB")
+    raw = []
+    for y in range(240):
+        for x in range(240):
+            r, g, b = image.getpixel((x, y))
+            color = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+            raw.append((color >> 8) & 0xFF)
+            raw.append(color & 0xFF)
+    return raw
 
-    for _ in range(full_chunks):
-        spi.writebytes(chunk)
-    if rem:
-        spi.writebytes([hi, lo] * rem)
+def show_image(image):
+    set_window(0, 0, 239, 239)
+    GPIO.output(DC, 1)
+    buf = image_to_rgb565_bytes(image)
+    chunk_size = 4096
+    for i in range(0, len(buf), chunk_size):
+        spi.writebytes(buf[i:i + chunk_size])
 
 init()
 
-fill(0xF800)  # red
-time.sleep(2)
-fill(0x07E0)  # green
-time.sleep(2)
-fill(0x001F)  # blue
-time.sleep(2)
-fill(0xFFE0)  # yellow
+img = Image.new("RGB", (240, 240), "black")
+draw = ImageDraw.Draw(img)
+
+draw.ellipse((20, 20, 220, 220), fill=(255, 220, 0))
+draw.ellipse((70, 75, 95, 100), fill="black")
+draw.ellipse((145, 75, 170, 100), fill="black")
+draw.arc((60, 90, 180, 180), start=20, end=160, fill="black", width=6)
+
+show_image(img)
 
 while True:
-    time.sleep(1)
+    time.sleep(1) 
