@@ -103,30 +103,35 @@ def color(f):
 # SMALL CLEAN ICONS
 # =========================
 def draw_icon(d, code, frame):
-    cx, cy = 120, 55  # keep position
+    cx, cy = 120, 55
 
+    # ==== SUN (clean + modern) ====
     if code < 3:
-        # SUN (medium size)
-        d.ellipse((cx-14,cy-14,cx+14,cy+14),(255,200,0))
+        d.ellipse((cx-12,cy-12,cx+12,cy+12),(255,200,60))
+
         for i in range(8):
-            a = i*45 + frame*2
+            a = i*45 + frame*1.5
             x = cx + int(math.cos(math.radians(a))*22)
             y = cy + int(math.sin(math.radians(a))*22)
-            d.line((cx,cy,x,y),(255,180,0),3)
+            d.line((cx,cy,x,y),(255,180,60),3)
 
+    # ==== CLOUD (soft layered) ====
     elif code < 50:
-        # CLOUD (balanced size)
-        d.ellipse((cx-22,cy-8,cx+2,cy+10),(200,200,200))
-        d.ellipse((cx-6,cy-12,cx+18,cy+10),(220,220,220))
+        d.ellipse((cx-18,cy-6,cx+2,cy+10),(200,205,210))
+        d.ellipse((cx-5,cy-12,cx+18,cy+10),(220,225,230))
+        d.ellipse((cx-12,cy+2,cx+12,cy+14),(190,195,200))
 
+    # ==== RAIN (clean lines, not spaghetti) ====
     else:
-        # RAIN
-        d.ellipse((cx-22,cy-8,cx+2,cy+10),(180,180,180))
-        d.ellipse((cx-6,cy-12,cx+18,cy+10),(200,200,200))
+        # cloud base
+        d.ellipse((cx-18,cy-6,cx+2,cy+10),(180,185,190))
+        d.ellipse((cx-5,cy-12,cx+18,cy+10),(200,205,210))
 
+        # rain drops (animated properly)
         for i in range(3):
-            y = cy+14 + ((frame+i*3)%10)
-            d.line((cx-12+i*10,y,cx-12+i*10,y+7),(100,150,255),2)
+            offset = (frame*2 + i*6) % 14
+            x = cx - 10 + i*10
+            d.line((x, cy+12+offset, x, cy+18+offset), (90,160,255), 2)
 
 # =========================
 # MAIN DRAW (GOOD VERSION)
@@ -174,7 +179,10 @@ def build(temp, high, low, code, smooth, frame):
 
     # high low
     if high:
-        d.text((60,180),f"H:{int(high)}  L:{int(low)}",font=font(20),fill=(180,190,210))
+    text = f"H:{int(high)}  L:{int(low)}"
+    f_small = font(20)
+    w,h = d.textbbox((0,0),text,font=f_small)[2:]
+    d.text((120 - w/2, 180), text, font=f_small, fill=(180,190,210))
 
     # icon (FIXED SIZE + POSITION)
     draw_icon(d, code, frame)
