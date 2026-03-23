@@ -3,22 +3,21 @@ import RPi.GPIO as GPIO
 import time
 import math
 import requests
-from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import glob
 
 # =================
-# SETTINGS
+# CONFIG
 # =================
 DC = 25
 RST = 27
 
-USE_FAHRENHEIT = False
 TEMP_MIN = -10
 TEMP_MAX = 40
+USE_F = False
 
 # =================
-# DISPLAY INIT
+# DISPLAY SETUP
 # =================
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DC, GPIO.OUT)
@@ -66,7 +65,7 @@ def show(img):
         spi.writebytes(buf[i:i+4096])
 
 # =================
-# DATA SOURCES
+# DATA
 # =================
 def location():
     try:
@@ -81,19 +80,20 @@ def weather():
         j = requests.get(
             f"https://api.open-meteo.com/v1/forecast"
             f"?latitude={lat}&longitude={lon}"
-            f"&hourly=temperature_2m"
+            f"&current_weather=true"
             f"&daily=temperature_2m_max,temperature_2m_min"
             f"&timezone=auto",
             timeout=5
         ).json()
 
         return (
-            j["hourly"]["temperature_2m"][0],
+            j["current_weather"]["temperature"],
             j["daily"]["temperature_2m_max"][0],
-            j["daily"]["temperature_2m_min"][0]
+            j["daily"]["temperature_2m_min"][0],
+            j["current_weather"]["weathercode"]
         )
     except:
-        return None, None, None
+        return None, None, None, 0
 
 def sensor():
     try:
@@ -107,7 +107,7 @@ def sensor():
         return None
 
 # =================
-# UI HELPERS
+# HELPERS
 # =================
 def font(s):
     try:
@@ -124,14 +124,32 @@ def color(f):
     return (255,int(255*(1-(f-0.5)*2)),80)
 
 def convert(t):
-    if USE_FAHRENHEIT:
+    if USE_F:
         return (t*9/5)+32,"°F"
     return t,"°C"
 
 # =================
-# DRAW (FANCY AGAIN)
+# WEATHER ICON (ANIMATED)
 # =================
-def draw(temp, high, low, smooth):
+def draw_icon(draw, code, frame):
+    x,y = 120,55
+
+    # simple animated cloud
+    offset = int(math.sin(frame*0.2)*3)
+
+    draw.ellipse((x-20,y-10+offset,x,y+10+offset),(200,200,200))
+    draw.ellipse((x-5,y-15+offset,x+20,y+10+offset),(220,220,220))
+
+    # rain
+    if code > 50:
+        for i in range(3):
+            ry = y+20 + ((frame+i*3)%10)
+            draw.line((x-10+i*10, ry, x-10+i*10, ry+6),(100,150,255),2)
+
+# =================
+# DRAW
+# =================
+def draw_ui(temp, high, low, code, smooth, frame):
     img = Image.new("RGB",(240,240),(8,10,14))
     d = ImageDraw.Draw(img)
 
@@ -139,49 +157,59 @@ def draw(temp, high, low, smooth):
     segs = 36
     lit = int(f*segs)
 
+    # --- RING ---
     for i in range(segs):
         a0 = 140 + i*(260/segs)
         a1 = a0 + (260/segs)-2
 
-        if i<lit:
+        if i < lit:
             col = color(i/segs)
 
             glow = Image.new("RGBA",(240,240))
             gd = ImageDraw.Draw(glow)
-            gd.arc((20,20,220,220),a0,a1,fill=col+(180,),width=10)
-            glow = glow.filter(ImageFilter.GaussianBlur(4))
+            gd.arc((20,20,220,220),a0,a1,fill=col+(200,),width=14)
+            glow = glow.filter(ImageFilter.GaussianBlur(6))
             img.paste(glow,(0,0),glow)
 
         else:
-            d.arc((20,20,220,220),a0,a1,fill=(40,40,45),width=8)
+            d.arc((20,20,220,220),a0,a1,fill=(40,40,45),width=10)
 
-    d.ellipse((50,50,190,190),(12,14,20))
+    d.ellipse((45,45,195,195),(12,14,20))
 
     t,unit = convert(temp)
 
+    # BIG TEMP
+    f_big = font(90)
     txt = f"{t:.1f}"
-    f_big = font(60)
     w,h = d.textbbox((0,0),txt,font=f_big)[2:]
-    d.text((120-w/2,80),txt,font=f_big,fill=(255,255,255))
+    d.text((120-w/2,75),txt,font=f_big,fill=(255,255,255))
 
-    d.text((100,140),unit,font=font(20),fill=(120,180,255))
+    # UNIT
+    f_unit = font(32)
+    d.text((105,140),unit,font=f_unit,fill=(120,180,255))
 
+    # HIGH LOW
     if high:
         ht,_=convert(high)
         lt,_=convert(low)
-        d.text((75,180),f"H:{int(ht)}  L:{int(lt)}",font=font(16),fill=(180,190,210))
+        d.text((65,180),f"H:{int(ht)}  L:{int(lt)}",font=font(22),fill=(180,190,210))
+
+    # WEATHER ICON
+    draw_icon(d, code, frame)
 
     return img
 
 # =================
-# MAIN LOOP
+# MAIN
 # =================
 init()
+
 smooth = 15
+frame = 0
 
 while True:
     s = sensor()
-    w,h,l = weather()
+    w,h,l,code = weather()
 
     target = s if s is not None else w
     if target is None:
@@ -189,7 +217,8 @@ while True:
 
     smooth += (target - smooth)*0.1
 
-    img = draw(smooth, h, l, smooth)
+    img = draw_ui(smooth, h, l, code, smooth, frame)
     show(img)
 
+    frame += 1
     time.sleep(0.05)
