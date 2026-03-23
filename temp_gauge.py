@@ -1,18 +1,16 @@
-import spidev
+\import spidev
 import RPi.GPIO as GPIO
 import time
 import math
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-# ================= CONFIG =================
 DC = 25
 RST = 27
 
 TEMP_MIN = -10
 TEMP_MAX = 40
 
-# ================= DISPLAY =================
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 GPIO.setup(DC, GPIO.OUT)
@@ -64,7 +62,9 @@ def show(img):
     for i in range(0,len(buf),4096):
         spi.writebytes(buf[i:i+4096])
 
-# ================= WEATHER =================
+# =========================
+# WEATHER
+# =========================
 def get_weather():
     try:
         j = requests.get(
@@ -81,11 +81,11 @@ def get_weather():
     except:
         return None, None, None, 0
 
-# ================= HELPERS =================
+# =========================
+# HELPERS
+# =========================
 def font(size):
-    return ImageFont.truetype(
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size
-    )
+    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
 
 def frac(v):
     return max(0,min(1,(v-TEMP_MIN)/(TEMP_MAX-TEMP_MIN)))
@@ -98,7 +98,9 @@ def color(f):
     else:
         return (255,120,60)
 
-# ================= CLEAN ICON =================
+# =========================
+# BETTER WEATHER ICON
+# =========================
 def draw_icon(d, code, frame):
     cx, cy = 120, 55
 
@@ -124,20 +126,20 @@ def draw_icon(d, code, frame):
             x = cx - 10 + i*10
             d.line((x, cy+12+offset, x, cy+18+offset), (90,160,255), 2)
 
-# ================= MAIN DRAW =================
+# =========================
+# DRAW
+# =========================
 def build(temp, high, low, code, smooth, frame):
     img = Image.new("RGB",(240,240),(8,10,14))
-d = ImageDraw.Draw(img)
+    d = ImageDraw.Draw(img)
 
-d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
+    # outer blue ring
+    d.ellipse((8, 8, 232, 232), outline=(40,110,210), width=3)
 
-# ADD THIS LINE
-d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
     f = frac(smooth)
     segs = 40
     lit = int(f * segs)
 
-    # ===== GLOW RING =====
     for i in range(segs):
         a0 = 140 + i*(260/segs)
         a1 = a0 + (260/segs)-2
@@ -147,6 +149,7 @@ d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
 
             glow = Image.new("RGBA",(240,240))
             gd = ImageDraw.Draw(glow)
+
             gd.arc((20,20,220,220),a0,a1,fill=col+(180,),width=12)
             glow = glow.filter(ImageFilter.GaussianBlur(4))
 
@@ -156,31 +159,32 @@ d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
         else:
             d.arc((20,20,220,220),a0,a1,fill=(40,40,45),width=6)
 
-    # center
     d.ellipse((45,45,195,195),(12,14,20))
 
-    # ===== TEMP =====
+    # temp
     f_big = font(65)
     txt = f"{temp:.1f}"
     w,h = d.textbbox((0,0),txt,font=f_big)[2:]
-    d.text((120-w/2,75),txt,font=f_big,fill=(255,255,255))
+    d.text((120-w/2,70),txt,font=f_big,fill=(255,255,255))
 
-    # unit
+    # °C (shifted down)
     d.text((105,145),"°C",font=font(28),fill=(120,180,255))
 
-    # ===== CENTERED HIGH/LOW =====
+    # high/low centered
     if high:
         text = f"H:{int(high)}  L:{int(low)}"
         f_small = font(20)
         w,h = d.textbbox((0,0),text,font=f_small)[2:]
-        d.text((120 - w/2, 180), text, font=f_small, fill=(180,190,210))
+        d.text((120-w/2,180), text, font=f_small, fill=(180,190,210))
 
     # icon
     draw_icon(d, code, frame)
 
     return img
 
-# ================= MAIN =================
+# =========================
+# MAIN
+# =========================
 init()
 
 smooth = 15
