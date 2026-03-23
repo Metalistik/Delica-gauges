@@ -4,9 +4,34 @@ import time
 import math
 from PIL import Image, ImageDraw, ImageFont
 
+# =========================
+# SETTINGS
+# =========================
 DC = 25
 RST = 27
 
+# Set to False only if you have an ADS1115 + divider wired up
+SIMULATE = True
+
+# ADS1115 settings for real voltage reading
+ADS1115_ADDR = 0x48
+ADS1115_CHANNEL = 0
+
+# Voltage divider ratio:
+# Example: 100k top resistor and 20k bottom resistor
+# divider_ratio = (100k + 20k) / 20k = 6.0
+DIVIDER_RATIO = 6.0
+
+# ADC reference conversion
+ADS1115_LSB_4_096V = 4.096 / 32768.0
+
+# Gauge voltage range
+VOLT_MIN = 10.0
+VOLT_MAX = 15.0
+
+# =========================
+# DISPLAY DRIVER
+# =========================
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 GPIO.setup(DC, GPIO.OUT)
@@ -17,13 +42,16 @@ spi.open(0, 0)
 spi.max_speed_hz = 20000000
 spi.mode = 0
 
+
 def command(cmd):
     GPIO.output(DC, 0)
     spi.writebytes([cmd])
 
+
 def data(vals):
     GPIO.output(DC, 1)
     spi.writebytes(vals)
+
 
 def reset():
     GPIO.output(RST, 1)
@@ -32,6 +60,7 @@ def reset():
     time.sleep(0.05)
     GPIO.output(RST, 1)
     time.sleep(0.15)
+
 
 def init():
     reset()
@@ -103,12 +132,14 @@ def init():
     command(0x29)
     time.sleep(0.02)
 
+
 def set_window(x0, y0, x1, y1):
     command(0x2A)
     data([x0 >> 8, x0 & 0xFF, x1 >> 8, x1 & 0xFF])
     command(0x2B)
     data([y0 >> 8, y0 & 0xFF, y1 >> 8, y1 & 0xFF])
     command(0x2C)
+
 
 def image_to_rgb565_bytes(image):
     image = image.convert("RGB")
@@ -121,6 +152,7 @@ def image_to_rgb565_bytes(image):
             raw.append(color & 0xFF)
     return raw
 
+
 def show_image(image):
     set_window(0, 0, 239, 239)
     GPIO.output(DC, 1)
@@ -129,6 +161,61 @@ def show_image(image):
     for i in range(0, len(buf), chunk_size):
         spi.writebytes(buf[i:i + chunk_size])
 
+
+# =========================
+# OPTIONAL ADS1115 SUPPORT
+# =========================
+try:
+    import smbus2
+except ImportError:
+    smbus2 = None
+
+
+class ADS1115Reader:
+    def __init__(self, address=0x48, channel=0):
+        if smbus2 is None:
+            raise RuntimeError("smbus2 not installed")
+        self.bus = smbus2.SMBus(1)
+        self.address = address
+        self.channel = channel
+
+    def read_voltage(self):
+        # MUX settings for single-ended channels
+        mux_map = {
+            0: 0x4000,
+            1: 0x5000,
+            2: 0x6000,
+            3: 0x7000,
+        }
+        mux = mux_map.get(self.channel, 0x4000)
+
+        # Config:
+        # OS=1 start single conversion
+        # MUX=selected channel
+        # PGA=±4.096V
+        # MODE=single-shot
+        # DR=128SPS
+        # COMP disabled
+        config = 0x8000 | mux | 0x0200 | 0x0100 | 0x0080 | 0x0003
+
+        config_bytes = [(config >> 8) & 0xFF, config & 0xFF]
+        self.bus.write_i2c_block_data(self.address, 0x01, config_bytes)
+
+        time.sleep(0.02)
+
+        data = self.bus.read_i2c_block_data(self.address, 0x00, 2)
+        raw = (data[0] << 8) | data[1]
+        if raw > 32767:
+            raw -= 65536
+
+        adc_voltage = raw * ADS1115_LSB_4_096V
+        measured_voltage = adc_voltage * DIVIDER_RATIO
+        return measured_voltage
+
+
+# =========================
+# GAUGE DRAWING
+# =========================
 def get_font(size):
     paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -137,137 +224,184 @@ def get_font(size):
     for path in paths:
         try:
             return ImageFont.truetype(path, size)
-        except:
+        except Exception:
             pass
     return ImageFont.load_default()
+
 
 def polar(cx, cy, r, deg):
     rad = math.radians(deg)
     return (cx + r * math.cos(rad), cy + r * math.sin(rad))
 
-def voltage_to_angle(voltage):
-    # 10.0V -> 150 deg, 15.0V -> 390 deg
-    v = max(10.0, min(15.0, voltage))
-    return 150 + ((v - 10.0) / 5.0) * 240
 
-def draw_delica_silhouette(draw, x, y, scale=1.0, color=(90, 150, 255)):
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def voltage_fraction(voltage):
+    v = clamp(voltage, VOLT_MIN, VOLT_MAX)
+    return (v - VOLT_MIN) / (VOLT_MAX - VOLT_MIN)
+
+
+def zone_color(frac):
+    # 0.0 = red, 0.5 = amber, 1.0 = green
+    if frac < 0.35:
+        return (235, 70, 55)
+    if frac < 0.65:
+        return (255, 180, 50)
+    return (80, 235, 120)
+
+
+def status_text(voltage):
+    if voltage < 11.8:
+        return "LOW"
+    if voltage < 12.4:
+        return "WEAK"
+    if voltage <= 14.7:
+        return "NORMAL"
+    return "HIGH"
+
+
+def draw_delica_icon(draw, x, y, scale=1.0, color=(110, 180, 255)):
     pts = [
-        (0, 18), (8, 10), (32, 8), (48, 7), (60, 9), (72, 15),
-        (90, 15), (96, 18), (98, 24), (92, 24), (88, 20),
-        (70, 20), (67, 24), (30, 24), (26, 20), (10, 20), (8, 24), (0, 24)
+        (0, 16), (10, 10), (28, 9), (50, 9), (62, 12), (73, 16),
+        (92, 16), (98, 20), (98, 24), (89, 24), (85, 20),
+        (67, 20), (63, 24), (30, 24), (26, 20), (12, 20), (9, 24), (0, 24)
     ]
     scaled = [(x + px * scale, y + py * scale) for px, py in pts]
     draw.line(scaled + [scaled[0]], fill=color, width=max(1, int(2 * scale)))
-    # wheels
-    r = 5 * scale
+    r = 4.5 * scale
     for wx in [18, 78]:
-        draw.ellipse((x + (wx-r), y + (20-r), x + (wx+r), y + (20+r)), outline=color, width=max(1, int(2 * scale)))
+        draw.ellipse((x + wx - r, y + 21 - r, x + wx + r, y + 21 + r), outline=color, width=max(1, int(2 * scale)))
 
-def build_gauge_face(voltage=12.6):
+
+def build_gauge_face(voltage):
     img = Image.new("RGB", (240, 240), (8, 10, 14))
     draw = ImageDraw.Draw(img)
 
     cx, cy = 120, 120
+    frac = voltage_fraction(voltage)
 
-    # Background rings
-    draw.ellipse((6, 6, 234, 234), outline=(30, 90, 180), width=4)
-    draw.ellipse((14, 14, 226, 226), outline=(25, 35, 55), width=2)
-    draw.ellipse((24, 24, 216, 216), fill=(12, 14, 20), outline=(45, 55, 75), width=2)
-
-    # Accent arcs
-    draw.arc((10, 10, 230, 230), start=145, end=220, fill=(220, 70, 50), width=6)
-    draw.arc((10, 10, 230, 230), start=221, end=325, fill=(80, 180, 255), width=6)
-    draw.arc((10, 10, 230, 230), start=326, end=395, fill=(100, 220, 120), width=6)
-
-    # Tick marks
-    for i in range(0, 51):
-        value = 10.0 + i * 0.1
-        ang = voltage_to_angle(value) - 90
-        outer = 102
-        inner = 84 if i % 5 == 0 else 90
-        x1, y1 = polar(cx, cy, outer, ang)
-        x2, y2 = polar(cx, cy, inner, ang)
-
-        if value < 11.8:
-            col = (220, 70, 50)
-        elif value < 14.4:
-            col = (100, 180, 255)
-        else:
-            col = (100, 220, 120)
-
-        draw.line((x1, y1, x2, y2), fill=col, width=3 if i % 5 == 0 else 1)
-
-    # Number labels
+    font_tiny = get_font(11)
     font_small = get_font(14)
     font_mid = get_font(18)
-    font_big = get_font(42)
-    font_tiny = get_font(11)
+    font_big = get_font(44)
 
-    for val in [10, 11, 12, 13, 14, 15]:
-        ang = voltage_to_angle(val) - 90
-        tx, ty = polar(cx, cy, 70, ang)
-        text = str(val)
-        bbox = draw.textbbox((0, 0), text, font=font_small)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        draw.text((tx - tw/2, ty - th/2), text, font=font_small, fill=(220, 230, 255))
+    # Outer frame
+    draw.ellipse((4, 4, 236, 236), outline=(40, 110, 210), width=4)
+    draw.ellipse((12, 12, 228, 228), outline=(30, 40, 60), width=2)
+    draw.ellipse((20, 20, 220, 220), fill=(10, 12, 18), outline=(35, 45, 65), width=2)
 
-    # Center bezel
-    draw.ellipse((52, 52, 188, 188), fill=(18, 22, 30), outline=(50, 70, 110), width=2)
-    draw.ellipse((60, 60, 180, 180), fill=(10, 12, 18), outline=(25, 35, 55), width=1)
+    # Circular segmented bar graph
+    start_angle = 140
+    total_sweep = 260
+    segments = 34
+    lit_segments = int(round(frac * segments))
 
-    # Title
-    title = "SPACE GEAR"
-    bbox = draw.textbbox((0, 0), title, font=font_mid)
+    for i in range(segments):
+        seg_start = start_angle + (i * total_sweep / segments)
+        seg_end = start_angle + ((i + 1) * total_sweep / segments) - 3
+
+        seg_frac = i / max(1, segments - 1)
+        col = zone_color(seg_frac)
+
+        if i < lit_segments:
+            width = 8
+            draw.arc((18, 18, 222, 222), start=seg_start, end=seg_end, fill=col, width=width)
+            draw.arc((24, 24, 216, 216), start=seg_start, end=seg_end, fill=col, width=2)
+        else:
+            draw.arc((18, 18, 222, 222), start=seg_start, end=seg_end, fill=(35, 38, 45), width=8)
+
+    # Inner bezel
+    draw.ellipse((48, 48, 192, 192), fill=(15, 18, 26), outline=(50, 70, 105), width=2)
+    draw.ellipse((56, 56, 184, 184), fill=(8, 10, 16), outline=(24, 30, 45), width=1)
+
+    # Top labels
+    title = "DELICA SPACE GEAR"
+    bbox = draw.textbbox((0, 0), title, font=font_small)
     tw = bbox[2] - bbox[0]
-    draw.text((120 - tw/2, 36), title, font=font_mid, fill=(120, 180, 255))
+    draw.text((120 - tw / 2, 34), title, font=font_small, fill=(125, 190, 255))
 
-    subtitle = "DELICA VOLTS"
-    bbox = draw.textbbox((0, 0), subtitle, font=font_tiny)
-    tw = bbox[2] - bbox[0]
-    draw.text((120 - tw/2, 56), subtitle, font=font_tiny, fill=(150, 160, 180))
+    draw_delica_icon(draw, 70, 48, scale=1.0, color=(90, 160, 255))
 
-    # Delica silhouette
-    draw_delica_silhouette(draw, 72, 68, scale=1.0, color=(90, 150, 255))
-
-    # Main voltage text
-    volts_text = f"{voltage:.1f}"
+    # Digital center voltage
+    volts_text = f"{voltage:.2f}"
     bbox = draw.textbbox((0, 0), volts_text, font=font_big)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
-    draw.text((120 - tw/2, 105 - th/2), volts_text, font=font_big, fill=(245, 248, 255))
+    draw.text((120 - tw / 2, 104 - th / 2), volts_text, font=font_big, fill=(245, 248, 255))
 
-    units = "V"
-    bbox = draw.textbbox((0, 0), units, font=font_mid)
+    unit_text = "VOLTS"
+    bbox = draw.textbbox((0, 0), unit_text, font=font_mid)
     uw = bbox[2] - bbox[0]
-    draw.text((120 - uw/2, 136), units, font=font_mid, fill=(120, 180, 255))
+    draw.text((120 - uw / 2, 132), unit_text, font=font_mid, fill=(110, 180, 255))
 
-    # Lower info bar
-    status = "CHARGING NORMAL" if 13.2 <= voltage <= 14.7 else ("LOW BATTERY" if voltage < 12.0 else "CHECK SYSTEM")
-    status_color = (100, 220, 120) if status == "CHARGING NORMAL" else ((220, 70, 50) if status == "LOW BATTERY" else (255, 190, 80))
-    bbox = draw.textbbox((0, 0), status, font=font_tiny)
+    # Bottom status pill
+    st = status_text(voltage)
+    if st == "LOW":
+        st_col = (235, 70, 55)
+    elif st == "WEAK":
+        st_col = (255, 180, 50)
+    elif st == "NORMAL":
+        st_col = (80, 235, 120)
+    else:
+        st_col = (255, 120, 60)
+
+    draw.rounded_rectangle((62, 158, 178, 182), radius=10, fill=(18, 24, 35), outline=(50, 70, 110), width=1)
+    bbox = draw.textbbox((0, 0), st, font=font_small)
     sw = bbox[2] - bbox[0]
-    draw.rounded_rectangle((45, 170, 195, 188), radius=8, fill=(18, 24, 35), outline=(50, 70, 110), width=1)
-    draw.text((120 - sw/2, 173), status, font=font_tiny, fill=status_color)
+    draw.text((120 - sw / 2, 163), st, font=font_small, fill=st_col)
 
-    # Needle
-    ang = voltage_to_angle(voltage) - 90
-    nx, ny = polar(cx, cy, 78, ang)
-    bx1, by1 = polar(cx, cy, 12, ang + 90)
-    bx2, by2 = polar(cx, cy, 12, ang - 90)
-    draw.polygon([(bx1, by1), (bx2, by2), (nx, ny)], fill=(255, 90, 60))
-    draw.ellipse((114, 114, 126, 126), fill=(220, 230, 255), outline=(255, 90, 60), width=2)
+    # Range labels
+    draw.text((24, 192), "10V", font=font_tiny, fill=(180, 190, 210))
+    draw.text((103, 202), "12.5V", font=font_tiny, fill=(180, 190, 210))
+    draw.text((194, 192), "15V", font=font_tiny, fill=(180, 190, 210))
 
-    # Bottom tiny labels
-    draw.text((35, 198), "LOW", font=font_tiny, fill=(220, 70, 50))
-    draw.text((102, 198), "OK", font=font_tiny, fill=(100, 180, 255))
-    draw.text((178, 198), "HIGH", font=font_tiny, fill=(100, 220, 120))
+    # Tiny lower caption
+    mode = "SIM MODE" if SIMULATE else "LIVE MODE"
+    bbox = draw.textbbox((0, 0), mode, font=font_tiny)
+    mw = bbox[2] - bbox[0]
+    draw.text((120 - mw / 2, 218), mode, font=font_tiny, fill=(90, 110, 140))
 
     return img
 
-init()
-img = build_gauge_face(12.6)
-show_image(img)
 
-while True:
-    time.sleep(1)
+# =========================
+# MAIN LOOP
+# =========================
+def main():
+    init()
+
+    adc = None
+    if not SIMULATE:
+        adc = ADS1115Reader(address=ADS1115_ADDR, channel=ADS1115_CHANNEL)
+
+    displayed_voltage = 12.60
+    demo_phase = 0.0
+
+    while True:
+        try:
+            if SIMULATE:
+                demo_phase += 0.08
+                target_voltage = 12.8 + math.sin(demo_phase) * 1.4
+                target_voltage = clamp(target_voltage, VOLT_MIN, VOLT_MAX)
+            else:
+                target_voltage = adc.read_voltage()
+
+            # simple smoothing
+            displayed_voltage = (displayed_voltage * 0.82) + (target_voltage * 0.18)
+
+            img = build_gauge_face(displayed_voltage)
+            show_image(img)
+
+            time.sleep(0.08)
+
+        except KeyboardInterrupt:
+            break
+
+    GPIO.cleanup()
+    spi.close()
+
+
+if __name__ == "__main__":
+    main() 
