@@ -127,9 +127,9 @@ def draw_icon(d, code, frame):
 # ================= MAIN DRAW =================
 def build(temp, high, low, code, smooth, frame):
     img = Image.new("RGB",(240,240),(8,10,14))
-    d = ImageDraw.Draw(img)
-    img = Image.new("RGB",(240,240),(8,10,14))
-    d = ImageDraw.Draw(img)
+d = ImageDraw.Draw(img)
+
+d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
 
 # ADD THIS LINE
 d.ellipse((8, 8, 232, 232), outline=(40, 110, 210), width=3)
