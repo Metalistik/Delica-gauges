@@ -1,224 +1,144 @@
 import spidev
 import RPi.GPIO as GPIO
 import time
-import math
-import requests
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import glob
+from PIL import Image, ImageDraw
 
-# =================
-# CONFIG
-# =================
 DC = 25
 RST = 27
 
-TEMP_MIN = -10
-TEMP_MAX = 40
-USE_F = False
-
-# =================
-# DISPLAY SETUP
-# =================
 GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
 GPIO.setup(DC, GPIO.OUT)
 GPIO.setup(RST, GPIO.OUT)
 
 spi = spidev.SpiDev()
 spi.open(0, 0)
 spi.max_speed_hz = 20000000
+spi.mode = 0
 
-def cmd(c):
+def command(cmd):
     GPIO.output(DC, 0)
-    spi.writebytes([c])
+    spi.writebytes([cmd])
 
-def data(d):
+def data(vals):
     GPIO.output(DC, 1)
-    spi.writebytes(d)
+    spi.writebytes(vals)
 
 def reset():
-    GPIO.output(RST, 0)
-    time.sleep(0.1)
     GPIO.output(RST, 1)
-    time.sleep(0.1)
+    time.sleep(0.05)
+    GPIO.output(RST, 0)
+    time.sleep(0.05)
+    GPIO.output(RST, 1)
+    time.sleep(0.15)
 
 def init():
     reset()
-    cmd(0x11)
+
+    command(0xEF)
+    command(0xEB); data([0x14])
+    command(0xFE)
+    command(0xEF)
+
+    command(0xEB); data([0x14])
+    command(0x84); data([0x40])
+    command(0x85); data([0xFF])
+    command(0x86); data([0xFF])
+    command(0x87); data([0xFF])
+    command(0x88); data([0x0A])
+    command(0x89); data([0x21])
+    command(0x8A); data([0x00])
+    command(0x8B); data([0x80])
+    command(0x8C); data([0x01])
+    command(0x8D); data([0x01])
+    command(0x8E); data([0xFF])
+    command(0x8F); data([0xFF])
+
+    command(0xB6); data([0x00, 0x20])
+    command(0x36); data([0x08])
+    command(0x3A); data([0x05])
+
+    command(0x90); data([0x08, 0x08, 0x08, 0x08])
+    command(0xBD); data([0x06])
+    command(0xBC); data([0x00])
+    command(0xFF); data([0x60, 0x01, 0x04])
+
+    command(0xC3); data([0x13])
+    command(0xC4); data([0x13])
+    command(0xC9); data([0x22])
+
+    command(0xBE); data([0x11])
+    command(0xE1); data([0x10, 0x0E])
+
+    command(0xDF); data([0x21, 0x0C, 0x02])
+
+    command(0xF0); data([0x45, 0x09, 0x08, 0x08, 0x26, 0x2A])
+    command(0xF1); data([0x43, 0x70, 0x72, 0x36, 0x37, 0x6F])
+
+    command(0xF2); data([0x45, 0x09, 0x08, 0x08, 0x26, 0x2A])
+    command(0xF3); data([0x43, 0x70, 0x72, 0x36, 0x37, 0x6F])
+
+    command(0xED); data([0x1B, 0x0B])
+    command(0xAE); data([0x77])
+    command(0xCD); data([0x63])
+
+    command(0x70); data([0x07, 0x07, 0x04, 0x0E, 0x0F, 0x09, 0x07, 0x08, 0x03])
+
+    command(0xE8); data([0x34])
+    command(0x62); data([0x18, 0x0D, 0x71, 0xED, 0x70, 0x70, 0x18, 0x0F, 0x71, 0xEF, 0x70, 0x70])
+    command(0x63); data([0x18, 0x11, 0x71, 0xF1, 0x70, 0x70, 0x18, 0x13, 0x71, 0xF3, 0x70, 0x70])
+    command(0x64); data([0x28, 0x29, 0xF1, 0x01, 0xF1, 0x00, 0x07])
+    command(0x66); data([0x3C, 0x00, 0xCD, 0x67, 0x45, 0x45, 0x10, 0x00, 0x00, 0x00])
+    command(0x67); data([0x00, 0x3C, 0x00, 0x00, 0x00, 0x01, 0x54, 0x10, 0x32, 0x98])
+
+    command(0x74); data([0x10, 0x85, 0x80, 0x00, 0x00, 0x4E, 0x00])
+
+    command(0x98); data([0x3E, 0x07])
+
+    command(0x35)
+    command(0x21)
+    command(0x11)
     time.sleep(0.12)
-    cmd(0x29)
+    command(0x29)
+    time.sleep(0.02)
 
-def window():
-    cmd(0x2A); data([0,0,0,239])
-    cmd(0x2B); data([0,0,0,239])
-    cmd(0x2C)
+def set_window(x0, y0, x1, y1):
+    command(0x2A)
+    data([x0 >> 8, x0 & 0xFF, x1 >> 8, x1 & 0xFF])
+    command(0x2B)
+    data([y0 >> 8, y0 & 0xFF, y1 >> 8, y1 & 0xFF])
+    command(0x2C)
 
-def show(img):
-    window()
-    GPIO.output(DC, 1)
-    buf=[]
+def image_to_rgb565_bytes(image):
+    image = image.convert("RGB")
+    raw = []
     for y in range(240):
         for x in range(240):
-            r,g,b=img.getpixel((x,y))
-            c=((r&0xF8)<<8)|((g&0xFC)<<3)|(b>>3)
-            buf += [(c>>8)&255, c&255]
-    for i in range(0,len(buf),4096):
-        spi.writebytes(buf[i:i+4096])
+            r, g, b = image.getpixel((x, y))
+            color = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+            raw.append((color >> 8) & 0xFF)
+            raw.append(color & 0xFF)
+    return raw
 
-# =================
-# DATA
-# =================
-def location():
-    try:
-        j = requests.get("http://ip-api.com/json/", timeout=5).json()
-        return j["lat"], j["lon"]
-    except:
-        return 34.68, 135.80
+def show_image(image):
+    set_window(0, 0, 239, 239)
+    GPIO.output(DC, 1)
+    buf = image_to_rgb565_bytes(image)
+    chunk_size = 4096
+    for i in range(0, len(buf), chunk_size):
+        spi.writebytes(buf[i:i + chunk_size])
 
-def weather():
-    lat, lon = location()
-    try:
-        j = requests.get(
-            f"https://api.open-meteo.com/v1/forecast"
-            f"?latitude={lat}&longitude={lon}"
-            f"&current_weather=true"
-            f"&daily=temperature_2m_max,temperature_2m_min"
-            f"&timezone=auto",
-            timeout=5
-        ).json()
-
-        return (
-            j["current_weather"]["temperature"],
-            j["daily"]["temperature_2m_max"][0],
-            j["daily"]["temperature_2m_min"][0],
-            j["current_weather"]["weathercode"]
-        )
-    except:
-        return None, None, None, 0
-
-def sensor():
-    try:
-        base = glob.glob("/sys/bus/w1/devices/28-*")[0]
-        with open(base+"/w1_slave") as f:
-            lines = f.readlines()
-        if "YES" not in lines[0]:
-            return None
-        return float(lines[1].split("t=")[-1])/1000
-    except:
-        return None
-
-# =================
-# HELPERS
-# =================
-def font(s):
-    try:
-        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", s)
-    except:
-        return ImageFont.load_default()
-
-def frac(v):
-    return max(0,min(1,(v-TEMP_MIN)/(TEMP_MAX-TEMP_MIN)))
-
-def color(f):
-    if f<0.5:
-        return (int(255*f*2),255,80)
-    return (255,int(255*(1-(f-0.5)*2)),80)
-
-def convert(t):
-    if USE_F:
-        return (t*9/5)+32,"°F"
-    return t,"°C"
-
-# =================
-# WEATHER ICON (ANIMATED)
-# =================
-def draw_icon(draw, code, frame):
-    x,y = 120,55
-
-    # simple animated cloud
-    offset = int(math.sin(frame*0.2)*3)
-
-    draw.ellipse((x-20,y-10+offset,x,y+10+offset),(200,200,200))
-    draw.ellipse((x-5,y-15+offset,x+20,y+10+offset),(220,220,220))
-
-    # rain
-    if code > 50:
-        for i in range(3):
-            ry = y+20 + ((frame+i*3)%10)
-            draw.line((x-10+i*10, ry, x-10+i*10, ry+6),(100,150,255),2)
-
-# =================
-# DRAW
-# =================
-def draw_ui(temp, high, low, code, smooth, frame):
-    img = Image.new("RGB",(240,240),(8,10,14))
-    d = ImageDraw.Draw(img)
-
-    f = frac(smooth)
-    segs = 36
-    lit = int(f*segs)
-
-    # --- RING ---
-    for i in range(segs):
-        a0 = 140 + i*(260/segs)
-        a1 = a0 + (260/segs)-2
-
-        if i < lit:
-            col = color(i/segs)
-
-            glow = Image.new("RGBA",(240,240))
-            gd = ImageDraw.Draw(glow)
-            gd.arc((20,20,220,220),a0,a1,fill=col+(200,),width=14)
-            glow = glow.filter(ImageFilter.GaussianBlur(6))
-            img.paste(glow,(0,0),glow)
-
-        else:
-            d.arc((20,20,220,220),a0,a1,fill=(40,40,45),width=10)
-
-    d.ellipse((45,45,195,195),(12,14,20))
-
-    t,unit = convert(temp)
-
-    # BIG TEMP
-    f_big = font(90)
-    txt = f"{t:.1f}"
-    w,h = d.textbbox((0,0),txt,font=f_big)[2:]
-    d.text((120-w/2,75),txt,font=f_big,fill=(255,255,255))
-
-    # UNIT
-    f_unit = font(32)
-    d.text((105,140),unit,font=f_unit,fill=(120,180,255))
-
-    # HIGH LOW
-    if high:
-        ht,_=convert(high)
-        lt,_=convert(low)
-        d.text((65,180),f"H:{int(ht)}  L:{int(lt)}",font=font(22),fill=(180,190,210))
-
-    # WEATHER ICON
-    draw_icon(d, code, frame)
-
-    return img
-
-# =================
-# MAIN
-# =================
 init()
 
-smooth = 15
-frame = 0
+img = Image.new("RGB", (240, 240), "black")
+draw = ImageDraw.Draw(img)
+
+draw.ellipse((20, 20, 220, 220), fill=(255, 220, 0))
+draw.ellipse((70, 75, 95, 100), fill="black")
+draw.ellipse((145, 75, 170, 100), fill="black")
+draw.arc((60, 90, 180, 180), start=20, end=160, fill="black", width=6)
+
+show_image(img)
 
 while True:
-    s = sensor()
-    w,h,l,code = weather()
-
-    target = s if s is not None else w
-    if target is None:
-        target = smooth
-
-    smooth += (target - smooth)*0.1
-
-    img = draw_ui(smooth, h, l, code, smooth, frame)
-    show(img)
-
-    frame += 1
-    time.sleep(0.05)
+    time.sleep(1)
