@@ -1,4 +1,4 @@
-\import spidev
+import spidev
 import RPi.GPIO as GPIO
 import time
 import math
