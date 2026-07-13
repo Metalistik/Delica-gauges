@@ -17,7 +17,7 @@ GPIO.setup(DC, GPIO.OUT)
 GPIO.setup(RST, GPIO.OUT)
 
 spi = spidev.SpiDev()
-spi.open(0, 0)
+spi.open(0, 1)
 spi.max_speed_hz = 20000000
 spi.mode = 0
 
