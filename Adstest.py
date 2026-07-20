@@ -14,7 +14,7 @@ ads = ADS.ADS1115(i2c, address=0x48)
 ads.gain = 16
 
 # Read channel A0
-chan = AnalogIn(ads, ADS.P0)
+chan = AnalogIn(ads, 0)
 
 print("Reading ADS1115 A0 (Ctrl+C to stop)\n")
 
