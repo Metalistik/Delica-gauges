@@ -1138,7 +1138,7 @@ class ADS1115VoltageSensor:
             raw = (raw_bytes[0] << 8) | raw_bytes[1]
             if raw & 0x8000:
                 raw -= 65536
-            adc_voltage = raw * 4.096 / 32768.0
+            adc_voltage = raw * 1.024 / 32768.0
             return max(0.0, adc_voltage * self.divider_ratio * self.calibration)
         except Exception as exc:
             self.last_error = str(exc)
