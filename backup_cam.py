@@ -6,7 +6,7 @@ import time
 
 DEVICE = 0  # Change to 1 if your capture device is /dev/video1
 
-cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+cap = cv2.VideoCapture(1, cv2.CAP_V4L2)
 
 if not cap.isOpened():
     print("Unable to open video capture device.")
