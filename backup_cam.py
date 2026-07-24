@@ -4,57 +4,47 @@ import cv2
 import numpy as np
 import time
 
-DEVICE = 0  # Change to 1 if your capture device is /dev/video1
+DEVICE = 0
 
-cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+cap = cv2.VideoCapture(DEVICE, cv2.CAP_V4L2)
 
 if not cap.isOpened():
-    print("Unable to open video capture device.")
+    print("Unable to open capture device.")
     exit(1)
 
-cv2.namedWindow("Backup Camera", cv2.WINDOW_NORMAL)
-cv2.setWindowProperty(
-    "Backup Camera",
-    cv2.WND_PROP_FULLSCREEN,
-    cv2.WINDOW_FULLSCREEN
-)
+window_open = False
 
 while True:
     ret, frame = cap.read()
 
-    if ret and frame is not None:
-        # Ignore completely black frames
-        if np.mean(frame) > 5:
-            cv2.imshow("Backup Camera", frame)
-        else:
-            waiting = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(
-                waiting,
-                "Waiting for video signal...",
-                (50,240),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (255,255,255),
-                2
+    signal_present = (
+        ret
+        and frame is not None
+        and frame.size > 0
+        and np.mean(frame) > 5
+    )
+
+    if signal_present:
+
+        if not window_open:
+            cv2.namedWindow("Backup Camera", cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty(
+                "Backup Camera",
+                cv2.WND_PROP_FULLSCREEN,
+                cv2.WINDOW_FULLSCREEN
             )
-            cv2.imshow("Backup Camera", waiting)
+            window_open = True
+
+        cv2.imshow("Backup Camera", frame)
+        cv2.waitKey(1)
+
     else:
-        waiting = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(
-            waiting,
-            "Waiting for video signal...",
-            (50,240),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (255,255,255),
-            2
-        )
-        cv2.imshow("Backup Camera", waiting)
 
-    key = cv2.waitKey(30)
+        if window_open:
+            cv2.destroyWindow("Backup Camera")
+            window_open = False
 
-    if key == 27 or key == ord('q'):
-        break
+        time.sleep(0.1)
 
 cap.release()
 cv2.destroyAllWindows()
